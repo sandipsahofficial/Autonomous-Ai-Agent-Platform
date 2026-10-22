@@ -141,7 +141,7 @@ export const App: React.FC = () => {
             }}>
               <div>
                 <h2 style={{ fontSize: '1.15rem', fontWeight: 800, color: '#f8fafc', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  Good morning, Alex
+                  Good morning, Sandip Sah
                 </h2>
                 <p style={{ fontSize: '0.74rem', color: '#94a3b8' }}>
                   Your agent network is healthy. <span style={{ color: '#fbbf24', fontWeight: 600 }}>{pendingApproval ? '4 actions' : '3 actions'}</span> need approval.
@@ -238,10 +238,11 @@ export const App: React.FC = () => {
                   alignItems: 'center',
                   justifyContent: 'center',
                   fontWeight: 800,
-                  fontSize: '0.75rem',
+                  fontSize: '0.7rem',
+                  letterSpacing: '0.04em',
                   color: '#090d16'
                 }}>
-                  A
+                  SS
                 </div>
               </div>
             </div>
