@@ -1,0 +1,37 @@
+[
+  {
+    "id": "task_1",
+    "name": "Asyncio Concurrency Research",
+    "goal": "Research Python asyncio best practices, event loops, and tasks",
+    "required_keywords": ["asyncio", "loop", "task"],
+    "requires_code": false
+  },
+  {
+    "id": "task_2",
+    "name": "Iterative Fibonacci",
+    "goal": "Implement an iterative Fibonacci function in Python with O(n) runtime",
+    "required_keywords": ["def", "fibonacci", "return"],
+    "requires_code": true
+  },
+  {
+    "id": "task_3",
+    "name": "String Reversal Algorithm",
+    "goal": "Write a Python script to reverse a string handling unicode and empty inputs",
+    "required_keywords": ["def", "reverse", "return"],
+    "requires_code": true
+  },
+  {
+    "id": "task_4",
+    "name": "SQL Injection Defense Research",
+    "goal": "Research parameterized queries and ORM protections against SQL injection",
+    "required_keywords": ["parameterized", "sql", "injection"],
+    "requires_code": false
+  },
+  {
+    "id": "task_5",
+    "name": "Binary Search Implementation",
+    "goal": "Search for binary search algorithm details and implement it in Python",
+    "required_keywords": ["def", "binary", "search", "mid"],
+    "requires_code": true
+  }
+]
