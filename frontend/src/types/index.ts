@@ -51,3 +51,20 @@ export interface PendingApproval {
   risk_level: string;
   reason: string;
 }
+
+export interface PendingApprovalItem {
+  task_id: string;
+  goal: string;
+  tool_name: string;
+  arguments: Record<string, any>;
+  risk_level: string;
+  reason: string;
+  status: string;
+  created_at?: string;
+  updated_at?: string;
+}
+
+export interface PendingApprovalsListResponse {
+  total: number;
+  approvals: PendingApprovalItem[];
+}

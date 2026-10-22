@@ -40,26 +40,60 @@ def run_agent_task_background(task_id: str, goal: str):
 
         t = db.query(Task).filter(Task.id == task_id).first()
         if t:
-            for st_dict in final_state.get("subtasks", []):
-                subtask = Subtask(
-                    task_id=task_id,
-                    order_index=st_dict.get("order_index", 0),
-                    title=st_dict.get("title", ""),
-                    description=st_dict.get("description", ""),
-                    assigned_agent=st_dict.get("assigned_agent", "worker"),
-                    status=SubtaskStatus.COMPLETED,
-                    result=st_dict.get("result", ""),
-                )
-                db.add(subtask)
+            # Check if execution paused at an approval interrupt
+            state_snapshot = graph.get_state(config)
+            has_interrupt = False
+            if state_snapshot and state_snapshot.tasks:
+                for task_task in state_snapshot.tasks:
+                    if getattr(task_task, "interrupts", None):
+                        has_interrupt = True
+                        break
+
+            # Sync subtasks to DB
+            existing_subtasks = db.query(Subtask).filter(Subtask.task_id == task_id).all()
+            if not existing_subtasks:
+                for st_dict in final_state.get("subtasks", []):
+                    st_status = SubtaskStatus.COMPLETED
+                    if has_interrupt and st_dict.get("order_index") == final_state.get("current_subtask_index", 0):
+                        st_status = SubtaskStatus.WAITING_APPROVAL
+                    subtask = Subtask(
+                        task_id=task_id,
+                        order_index=st_dict.get("order_index", 0),
+                        title=st_dict.get("title", ""),
+                        description=st_dict.get("description", ""),
+                        assigned_agent=st_dict.get("assigned_agent", "worker"),
+                        status=st_status,
+                        result=st_dict.get("result", ""),
+                    )
+                    db.add(subtask)
 
             t.current_step = final_state.get("current_step", 1)
             t.token_usage = final_state.get("token_usage", 0)
             t.estimated_cost_usd = final_state.get("estimated_cost_usd", 0.0)
-            t.final_output = final_state.get("final_output") or final_state.get("current_result")
-            t.status = TaskStatus.COMPLETED
+
+            if has_interrupt:
+                t.status = TaskStatus.WAITING_APPROVAL
+            elif final_state.get("error_message"):
+                t.status = TaskStatus.FAILED
+                t.error_message = final_state.get("error_message")
+            elif final_state.get("is_completed"):
+                t.status = TaskStatus.COMPLETED
+                t.final_output = final_state.get("final_output") or final_state.get("current_result")
+            else:
+                t.status = TaskStatus.RUNNING
+
             db.commit()
+
     except Exception as exc:
         print(f"Background execution error: {exc}")
+        try:
+            t = db.query(Task).filter(Task.id == task_id).first()
+            if t:
+                t.status = TaskStatus.FAILED
+                t.error_message = f"Execution failed: {str(exc)}"
+                db.commit()
+        except Exception:
+            pass
     finally:
         db.close()
 

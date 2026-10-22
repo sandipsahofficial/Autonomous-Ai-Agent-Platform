@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Task, AuditLog, PendingApproval } from './types';
+import { Task, AuditLog, PendingApprovalItem } from './types';
 import * as api from './api/client';
 import { MeshHeader } from './components/MeshHeader';
 import { MeshSidebar } from './components/MeshSidebar';
@@ -17,7 +17,9 @@ export const App: React.FC = () => {
   const [, setTasks] = useState<Task[]>([]);
   const [activeTaskId, setActiveTaskId] = useState<string | null>(null);
   const [activeTask, setActiveTask] = useState<Task | null>(null);
-  const [pendingApproval, setPendingApproval] = useState<PendingApproval | null>(null);
+  const [pendingApprovals, setPendingApprovals] = useState<PendingApprovalItem[]>([]);
+  const [isLoadingApprovals, setIsLoadingApprovals] = useState(false);
+  const [approvalsError, setApprovalsError] = useState<string | null>(null);
   const [auditLogs, setAuditLogs] = useState<AuditLog[]>([]);
   const [auditFilter, setAuditFilter] = useState<string | undefined>(undefined);
   const [isDeploying, setIsDeploying] = useState(false);
@@ -29,6 +31,7 @@ export const App: React.FC = () => {
   useEffect(() => {
     const poll = async () => {
       try {
+        // 1. Fetch recent tasks
         const taskData = await api.listTasks();
         setTasks(taskData.tasks);
 
@@ -37,26 +40,32 @@ export const App: React.FC = () => {
           if (!activeTaskId) setActiveTaskId(currentId);
           const taskDetail = await api.getTask(currentId);
           setActiveTask(taskDetail);
-
-          const approvalData = await api.getPendingApproval(currentId);
-          if (approvalData.has_pending_approval && approvalData.pending_approval) {
-            setPendingApproval(approvalData.pending_approval);
-          } else {
-            setPendingApproval(null);
-          }
         }
 
-        const auditData = await api.listAuditLogs();
+        // 2. Fetch real pending approvals across all tasks
+        try {
+          const approvalsData = await api.listPendingApprovals();
+          setPendingApprovals(approvalsData.approvals || []);
+          setApprovalsError(null);
+        } catch (apprErr: any) {
+          setApprovalsError(apprErr?.message || 'Error fetching approvals');
+        }
+
+        // 3. Fetch audit logs
+        const auditData = await api.listAuditLogs(auditFilter);
         setAuditLogs(auditData.logs);
       } catch (err) {
         // Backend live reload or initialization
+      } finally {
+        setIsLoadingApprovals(false);
       }
     };
 
+    setIsLoadingApprovals(true);
     poll();
     const interval = setInterval(poll, 2000);
     return () => clearInterval(interval);
-  }, [activeTaskId]);
+  }, [activeTaskId, auditFilter]);
 
   const handleCreateTask = async (goal: string) => {
     setIsDeploying(true);
@@ -73,16 +82,21 @@ export const App: React.FC = () => {
     }
   };
 
-  const handleApprovalDecision = async (approved: boolean, feedback?: string) => {
-    if (!activeTaskId) return;
+  const handleApprovalAction = async (taskId: string, approved: boolean, feedback?: string) => {
     setIsSubmittingApproval(true);
     try {
-      await api.submitApproval(activeTaskId, approved, feedback);
-      setPendingApproval(null);
-      const updated = await api.getTask(activeTaskId);
-      setActiveTask(updated);
-    } catch (err) {
-      alert(`Error submitting decision: ${err}`);
+      await api.submitApproval(taskId, approved, feedback);
+      // Immediately refresh pending approvals and tasks
+      const approvalsData = await api.listPendingApprovals();
+      setPendingApprovals(approvalsData.approvals || []);
+      const taskData = await api.listTasks();
+      setTasks(taskData.tasks);
+      if (activeTaskId === taskId) {
+        const updated = await api.getTask(taskId);
+        setActiveTask(updated);
+      }
+    } catch (err: any) {
+      alert(`Error submitting approval decision: ${err?.message || err}`);
     } finally {
       setIsSubmittingApproval(false);
     }
@@ -122,7 +136,7 @@ export const App: React.FC = () => {
           <MeshSidebar
             activeTab={activeTab}
             onTabChange={setActiveTab}
-            pendingApprovalsCount={pendingApproval ? 4 : 3}
+            pendingApprovalsCount={pendingApprovals.length}
           />
 
           {/* Main Dashboard Canvas */}
@@ -144,7 +158,7 @@ export const App: React.FC = () => {
                   Good morning, Sandip Sah
                 </h2>
                 <p style={{ fontSize: '0.74rem', color: '#94a3b8' }}>
-                  Your agent network is healthy. <span style={{ color: '#fbbf24', fontWeight: 600 }}>{pendingApproval ? '4 actions' : '3 actions'}</span> need approval.
+                  Your agent network is healthy. <span style={{ color: pendingApprovals.length > 0 ? '#fbbf24' : '#34d399', fontWeight: 600 }}>{pendingApprovals.length} action{pendingApprovals.length === 1 ? '' : 's'}</span> {pendingApprovals.length === 1 ? 'needs' : 'need'} approval.
                 </p>
               </div>
 
@@ -256,7 +270,7 @@ export const App: React.FC = () => {
                     activeCount={12}
                     successRate={98.4}
                     avgCost={0.42}
-                    pendingApprovals={pendingApproval ? 4 : 3}
+                    pendingApprovals={pendingApprovals.length}
                   />
 
                   {/* Middle Row: Live Mission Graph (65%) & Approval Queue (35%) */}
@@ -271,8 +285,11 @@ export const App: React.FC = () => {
                       onSelectNode={(node) => console.log('Selected node:', node)}
                     />
                     <MeshApprovalQueue
-                      realPendingApproval={pendingApproval}
-                      onApproveReal={handleApprovalDecision}
+                      approvals={pendingApprovals}
+                      isLoading={isLoadingApprovals}
+                      error={approvalsError}
+                      onApprove={(taskId, feedback) => handleApprovalAction(taskId, true, feedback)}
+                      onReject={(taskId, feedback) => handleApprovalAction(taskId, false, feedback)}
                       isSubmitting={isSubmittingApproval}
                     />
                   </div>

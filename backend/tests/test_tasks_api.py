@@ -26,18 +26,16 @@ def override_get_db():
         db.close()
 
 
-# Override application dependency
-app.dependency_overrides[get_db] = override_get_db
-
-
 class TestTasksAPI(unittest.TestCase):
     def setUp(self):
         """Create fresh database tables before each test."""
         Base.metadata.create_all(bind=test_engine)
+        app.dependency_overrides[get_db] = override_get_db
         self.client = TestClient(app)
 
     def tearDown(self):
-        """Drop all tables after each test."""
+        """Drop all tables and clear overrides after each test."""
+        app.dependency_overrides.clear()
         Base.metadata.drop_all(bind=test_engine)
 
     def test_create_and_get_task(self):

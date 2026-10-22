@@ -1,4 +1,4 @@
-import { Task, AuditLog, PendingApproval } from '../types';
+import { Task, AuditLog, PendingApproval, PendingApprovalsListResponse } from '../types';
 
 const API_BASE = '/api/v1';
 
@@ -30,6 +30,12 @@ export async function getPendingApproval(taskId: string): Promise<{
 }> {
   const res = await fetch(`${API_BASE}/tasks/${taskId}/pending-approval`);
   if (!res.ok) throw new Error(`Failed to fetch approval state: ${res.statusText}`);
+  return res.json();
+}
+
+export async function listPendingApprovals(): Promise<PendingApprovalsListResponse> {
+  const res = await fetch(`${API_BASE}/approvals/pending`);
+  if (!res.ok) throw new Error(`Failed to list pending approvals: ${res.statusText}`);
   return res.json();
 }
 
