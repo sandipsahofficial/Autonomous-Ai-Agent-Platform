@@ -1,22 +1,79 @@
 from typing import Optional, List
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status, BackgroundTasks
 from sqlalchemy.orm import Session
-from app.database import get_db
-from app.models.task import Task, Subtask, TaskStatus
+from app.database import get_db, SessionLocal
+from app.models.task import Task, Subtask, TaskStatus, SubtaskStatus
 from app.schemas.task import TaskCreate, TaskResponse, TaskListResponse, SubtaskCreate, SubtaskResponse
+from app.agents.graph import build_multi_agent_graph
 
 router = APIRouter(prefix="/tasks", tags=["Tasks"])
 
 
-@router.post("", response_model=TaskResponse, status_code=status.HTTP_201_CREATED)
-def create_task(payload: TaskCreate, db: Session = Depends(get_db)):
+def run_agent_task_background(task_id: str, goal: str):
     """
-    Create a new agent task with a user goal.
+    Executes the multi-agent graph in the background and updates DB state.
+    """
+    graph = build_multi_agent_graph(use_checkpointer=True)
+    config = {"configurable": {"thread_id": task_id}}
+    initial_state = {
+        "task_id": task_id,
+        "goal": goal,
+        "current_step": 0,
+        "max_steps": 12,
+        "max_rework_attempts": 2,
+        "token_usage": 0,
+        "estimated_cost_usd": 0.0,
+        "messages": [],
+        "subtasks": [],
+        "current_subtask_index": 0,
+        "is_completed": False,
+    }
+
+    db = SessionLocal()
+    try:
+        t = db.query(Task).filter(Task.id == task_id).first()
+        if t:
+            t.status = TaskStatus.RUNNING
+            db.commit()
+
+        final_state = graph.invoke(initial_state, config=config)
+
+        t = db.query(Task).filter(Task.id == task_id).first()
+        if t:
+            for st_dict in final_state.get("subtasks", []):
+                subtask = Subtask(
+                    task_id=task_id,
+                    order_index=st_dict.get("order_index", 0),
+                    title=st_dict.get("title", ""),
+                    description=st_dict.get("description", ""),
+                    assigned_agent=st_dict.get("assigned_agent", "worker"),
+                    status=SubtaskStatus.COMPLETED,
+                    result=st_dict.get("result", ""),
+                )
+                db.add(subtask)
+
+            t.current_step = final_state.get("current_step", 1)
+            t.token_usage = final_state.get("token_usage", 0)
+            t.estimated_cost_usd = final_state.get("estimated_cost_usd", 0.0)
+            t.final_output = final_state.get("final_output") or final_state.get("current_result")
+            t.status = TaskStatus.COMPLETED
+            db.commit()
+    except Exception as exc:
+        print(f"Background execution error: {exc}")
+    finally:
+        db.close()
+
+
+@router.post("", response_model=TaskResponse, status_code=status.HTTP_201_CREATED)
+def create_task(payload: TaskCreate, background_tasks: BackgroundTasks, db: Session = Depends(get_db)):
+    """
+    Create a new agent task with a user goal and trigger background execution.
     """
     task = Task(goal=payload.goal, status=TaskStatus.PENDING)
     db.add(task)
     db.commit()
     db.refresh(task)
+    background_tasks.add_task(run_agent_task_background, task.id, task.goal)
     return task
 
 
