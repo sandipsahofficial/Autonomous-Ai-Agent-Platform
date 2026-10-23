@@ -1,4 +1,12 @@
-import { Task, AuditLog, PendingApproval, PendingApprovalsListResponse } from '../types';
+import {
+  Task,
+  AuditLog,
+  PendingApproval,
+  PendingApprovalsListResponse,
+  FleetMetrics,
+  AgentMetricsListResponse,
+  TaskTracesResponse,
+} from '../types';
 
 const API_BASE = '/api/v1';
 
@@ -59,5 +67,23 @@ export async function listAuditLogs(riskLevel?: string): Promise<{ total: number
     : `${API_BASE}/audit-logs`;
   const res = await fetch(url);
   if (!res.ok) throw new Error(`Failed to fetch audit logs: ${res.statusText}`);
+  return res.json();
+}
+
+export async function getFleetMetrics(): Promise<FleetMetrics> {
+  const res = await fetch(`${API_BASE}/metrics/fleet`);
+  if (!res.ok) throw new Error(`Failed to fetch fleet metrics: ${res.statusText}`);
+  return res.json();
+}
+
+export async function getAgentMetrics(): Promise<AgentMetricsListResponse> {
+  const res = await fetch(`${API_BASE}/metrics/agents`);
+  if (!res.ok) throw new Error(`Failed to fetch agent metrics: ${res.statusText}`);
+  return res.json();
+}
+
+export async function getTaskTraces(taskId: string): Promise<TaskTracesResponse> {
+  const res = await fetch(`${API_BASE}/tasks/${taskId}/traces`);
+  if (!res.ok) throw new Error(`Failed to fetch task traces: ${res.statusText}`);
   return res.json();
 }

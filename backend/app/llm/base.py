@@ -3,6 +3,26 @@ from typing import Any, Dict, Optional, Type
 from pydantic import BaseModel, Field
 
 
+class LLMProviderError(Exception):
+    """Base error for LLM provider failures."""
+    pass
+
+
+class LLMAuthenticationError(LLMProviderError):
+    """Missing, empty, or rejected API credentials."""
+    pass
+
+
+class LLMRateLimitError(LLMProviderError):
+    """Provider rate limit or quota exceeded (e.g. HTTP 429)."""
+    pass
+
+
+class LLMTimeoutError(LLMProviderError):
+    """Connection or read timeout during provider communication."""
+    pass
+
+
 class LLMUsage(BaseModel):
     """
     Standard token usage and cost accounting for an LLM invocation.
@@ -16,10 +36,14 @@ class LLMUsage(BaseModel):
 class LLMResponse(BaseModel):
     """
     Standardized response returned by any LLM provider.
+    Explicitly distinguishes mock responses from real model outputs.
     """
     content: str
     structured: Optional[Dict[str, Any]] = None
     usage: LLMUsage
+    provider: str = "mock"
+    is_mock: bool = True
+    metadata: Optional[Dict[str, Any]] = None
 
 
 # Standard token pricing table per million tokens (USD)

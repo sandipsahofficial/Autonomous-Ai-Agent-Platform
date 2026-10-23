@@ -212,4 +212,7 @@ class MockLLMProvider(BaseLLMProvider):
                 total_tokens=total_tokens,
                 cost_usd=cost_usd,
             ),
+            provider="mock",
+            is_mock=True,
+            metadata={"mode": "deterministic_mock"},
         )

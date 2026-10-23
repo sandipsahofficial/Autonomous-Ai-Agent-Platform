@@ -2,7 +2,16 @@ import json
 from typing import Any, Dict, Optional, Type
 import httpx
 from pydantic import BaseModel
-from app.llm.base import BaseLLMProvider, LLMResponse, LLMUsage, calculate_cost_usd
+from app.llm.base import (
+    BaseLLMProvider,
+    LLMResponse,
+    LLMUsage,
+    calculate_cost_usd,
+    LLMAuthenticationError,
+    LLMRateLimitError,
+    LLMTimeoutError,
+    LLMProviderError,
+)
 
 
 class ClaudeLLMProvider(BaseLLMProvider):
@@ -10,10 +19,13 @@ class ClaudeLLMProvider(BaseLLMProvider):
     Anthropic Claude API Provider (Claude 3.5 Sonnet).
     Tracks prompt and completion tokens and evaluates cost.
     """
-    def __init__(self, api_key: str, model_name: str = "claude-3-5-sonnet-20241022"):
+    def __init__(self, api_key: str, model_name: str = "claude-3-5-sonnet-20241022", timeout: float = 30.0):
+        if not api_key or not api_key.strip():
+            raise LLMAuthenticationError("Anthropic Claude API key cannot be empty.")
         self.api_key = api_key
         self.model_name = model_name
         self.api_url = "https://api.anthropic.com/v1/messages"
+        self.timeout = timeout
 
     def generate(
         self,
@@ -42,10 +54,21 @@ class ClaudeLLMProvider(BaseLLMProvider):
         if system_prompt:
             payload["system"] = system_prompt
 
-        with httpx.Client(timeout=30.0) as client:
-            resp = client.post(self.api_url, headers=headers, json=payload)
-            resp.raise_for_status()
-            data = resp.json()
+        try:
+            with httpx.Client(timeout=self.timeout) as client:
+                resp = client.post(self.api_url, headers=headers, json=payload)
+                if resp.status_code in (401, 403):
+                    raise LLMAuthenticationError(f"Claude authentication failed: {resp.status_code} - {resp.text}")
+                elif resp.status_code == 429:
+                    raise LLMRateLimitError(f"Claude rate limit or quota exceeded: {resp.text}")
+                resp.raise_for_status()
+                data = resp.json()
+        except httpx.TimeoutException as exc:
+            raise LLMTimeoutError(f"Claude request timed out after {self.timeout}s: {str(exc)}") from exc
+        except (LLMAuthenticationError, LLMRateLimitError, LLMTimeoutError):
+            raise
+        except Exception as exc:
+            raise LLMProviderError(f"Claude provider communication failure: {str(exc)}") from exc
 
         content = data["content"][0]["text"]
         usage_raw = data.get("usage", {})
@@ -57,7 +80,6 @@ class ClaudeLLMProvider(BaseLLMProvider):
         structured_data = None
         if response_schema:
             try:
-                # Handle potential markdown code fences ```json ... ```
                 cleaned = content.strip()
                 if cleaned.startswith("```json"):
                     cleaned = cleaned[7:]
@@ -80,4 +102,7 @@ class ClaudeLLMProvider(BaseLLMProvider):
                 total_tokens=total_tokens,
                 cost_usd=cost_usd,
             ),
+            provider="claude",
+            is_mock=False,
+            metadata={"model": self.model_name},
         )

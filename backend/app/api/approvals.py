@@ -11,6 +11,7 @@ from app.schemas.approval import (
     PendingApprovalsListResponse,
 )
 from app.agents.graph import build_multi_agent_graph
+from app.services.trace_service import record_execution_event
 
 # Two routers: one mounted at /approvals, one at /tasks for backward compatibility
 router = APIRouter(prefix="/approvals", tags=["Approvals"])
@@ -100,6 +101,16 @@ def _process_approval(
         "feedback": decision.feedback,
     }
 
+    decision_label = "APPROVED" if decision.approved else "REJECTED"
+    record_execution_event(
+        task_id=task_id,
+        event_type="APPROVAL_DECISION",
+        message=f"Operator decision received: {decision_label}. Notes: {decision.feedback or 'None'}",
+        agent_name="operator",
+        details={"approved": decision.approved, "feedback": decision.feedback},
+        db=db,
+    )
+
     try:
         final_state = graph.invoke(Command(resume=resume_payload), config=config)
     except Exception as exc:
@@ -122,12 +133,33 @@ def _process_approval(
 
     if has_another_interrupt:
         task.status = TaskStatus.WAITING_APPROVAL
+        record_execution_event(
+            task_id=task_id,
+            event_type="TASK_PAUSED",
+            message="Task paused at another approval gate",
+            agent_name="system",
+            db=db,
+        )
     elif final_state.get("error_message"):
         task.status = TaskStatus.FAILED
         task.error_message = final_state.get("error_message")
+        record_execution_event(
+            task_id=task_id,
+            event_type="TASK_FAILED",
+            message=f"Task failed after resume: {final_state.get('error_message')}",
+            agent_name="system",
+            db=db,
+        )
     elif final_state.get("is_completed"):
         task.status = TaskStatus.COMPLETED
         task.final_output = final_state.get("final_output") or final_state.get("current_result")
+        record_execution_event(
+            task_id=task_id,
+            event_type="TASK_COMPLETED",
+            message="Task successfully completed after approval resumption",
+            agent_name="system",
+            db=db,
+        )
     else:
         task.status = TaskStatus.RUNNING
 

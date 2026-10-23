@@ -9,6 +9,7 @@ from sqlalchemy import (
     Float,
     DateTime,
     ForeignKey,
+    JSON,
     Enum as SQLEnum,
 )
 from sqlalchemy.orm import relationship
@@ -79,6 +80,12 @@ class Task(Base):
         cascade="all, delete-orphan",
         order_by="Subtask.order_index",
     )
+    execution_events = relationship(
+        "ExecutionEvent",
+        back_populates="task",
+        cascade="all, delete-orphan",
+        order_by="ExecutionEvent.created_at",
+    )
 
 
 class Subtask(Base):
@@ -115,3 +122,30 @@ class Subtask(Base):
 
     # Relationships
     task = relationship("Task", back_populates="subtasks")
+
+
+class ExecutionEvent(Base):
+    """
+    Structured timeline event recorded during task planning and agent execution.
+    Persists granular state changes, agent activations, tool calls, and human approvals.
+    """
+    __tablename__ = "execution_events"
+
+    id = Column(String(36), primary_key=True, default=generate_uuid, index=True)
+    task_id = Column(
+        String(36),
+        ForeignKey("tasks.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    step_index = Column(Integer, default=0, nullable=False)
+    event_type = Column(String(64), nullable=False, index=True)
+    agent_name = Column(String(64), nullable=True, index=True)
+    message = Column(Text, nullable=False)
+    details = Column(JSON, nullable=True)
+
+    created_at = Column(DateTime(timezone=True), default=utc_now, nullable=False, index=True)
+
+    # Relationships
+    task = relationship("Task", back_populates="execution_events")
+

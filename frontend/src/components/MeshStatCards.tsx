@@ -1,18 +1,28 @@
 import React from 'react';
+import { FleetMetrics } from '../types';
 
 interface MeshStatCardsProps {
+  metrics?: FleetMetrics | null;
   activeCount?: number;
   successRate?: number;
   avgCost?: number;
   pendingApprovals?: number;
+  isLoading?: boolean;
 }
 
 export const MeshStatCards: React.FC<MeshStatCardsProps> = ({
-  activeCount = 12,
-  successRate = 98.4,
-  avgCost = 0.42,
-  pendingApprovals = 3,
+  metrics,
+  activeCount = 0,
+  successRate = 0.0,
+  avgCost = 0.0,
+  pendingApprovals = 0,
+  isLoading = false,
 }) => {
+  const displayActive = metrics ? metrics.active_tasks : activeCount;
+  const displaySuccess = metrics ? metrics.completion_rate : successRate;
+  const displayCost = metrics ? metrics.average_cost_usd : avgCost;
+  const displayApprovals = metrics ? metrics.pending_approvals : pendingApprovals;
+
   return (
     <div style={{
       display: 'grid',
@@ -20,7 +30,7 @@ export const MeshStatCards: React.FC<MeshStatCardsProps> = ({
       gap: '14px',
       marginBottom: '20px'
     }}>
-      {/* 1. ACTIVE AGENTS */}
+      {/* 1. ACTIVE MISSIONS / AGENTS */}
       <div style={{
         background: '#0d1320',
         border: '1px solid #1a253a',
@@ -39,15 +49,15 @@ export const MeshStatCards: React.FC<MeshStatCardsProps> = ({
           textTransform: 'uppercase',
           marginBottom: '8px'
         }}>
-          ACTIVE AGENTS
+          ACTIVE MISSIONS
         </div>
         <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between' }}>
           <div>
             <div style={{ fontSize: '1.75rem', fontWeight: 800, color: '#ffffff', lineHeight: 1 }}>
-              {activeCount}
+              {isLoading ? '...' : displayActive}
             </div>
             <div style={{ fontSize: '0.72rem', color: '#06b6d4', marginTop: '6px' }}>
-              +2 this week
+              {metrics ? `${metrics.total_tasks} total missions` : 'Real-time telemetry'}
             </div>
           </div>
           {/* Sparkline */}
@@ -86,7 +96,7 @@ export const MeshStatCards: React.FC<MeshStatCardsProps> = ({
         <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between' }}>
           <div>
             <div style={{ fontSize: '1.75rem', fontWeight: 800, color: '#ffffff', lineHeight: 1 }}>
-              {successRate}%
+              {isLoading ? '...' : `${displaySuccess.toFixed(1)}%`}
             </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: '4px', marginTop: '6px' }}>
               <span style={{
@@ -94,11 +104,11 @@ export const MeshStatCards: React.FC<MeshStatCardsProps> = ({
                 fontWeight: 700,
                 padding: '1px 6px',
                 borderRadius: '9999px',
-                background: 'rgba(16, 185, 129, 0.15)',
-                color: '#34d399',
-                border: '1px solid rgba(16, 185, 129, 0.3)'
+                background: displaySuccess > 0 ? 'rgba(16, 185, 129, 0.15)' : 'rgba(100, 116, 139, 0.15)',
+                color: displaySuccess > 0 ? '#34d399' : '#94a3b8',
+                border: displaySuccess > 0 ? '1px solid rgba(16, 185, 129, 0.3)' : '1px solid rgba(100, 116, 139, 0.3)'
               }}>
-                +1.2%
+                {metrics ? `${metrics.completed_tasks} completed / ${metrics.failed_tasks} failed` : 'Recorded executions'}
               </span>
             </div>
           </div>
@@ -138,7 +148,7 @@ export const MeshStatCards: React.FC<MeshStatCardsProps> = ({
         <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between' }}>
           <div>
             <div style={{ fontSize: '1.75rem', fontWeight: 800, color: '#ffffff', lineHeight: 1 }}>
-              ${avgCost.toFixed(2)}
+              {isLoading ? '...' : `$${displayCost.toFixed(2)}`}
             </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: '4px', marginTop: '6px' }}>
               <span style={{
@@ -146,11 +156,11 @@ export const MeshStatCards: React.FC<MeshStatCardsProps> = ({
                 fontWeight: 700,
                 padding: '1px 6px',
                 borderRadius: '9999px',
-                background: 'rgba(16, 185, 129, 0.15)',
-                color: '#34d399',
-                border: '1px solid rgba(16, 185, 129, 0.3)'
+                background: 'rgba(56, 189, 248, 0.15)',
+                color: '#38bdf8',
+                border: '1px solid rgba(56, 189, 248, 0.3)'
               }}>
-                -8.1%
+                {metrics ? `${metrics.total_tokens.toLocaleString()} tokens` : 'API Model Spend'}
               </span>
             </div>
           </div>
@@ -190,7 +200,7 @@ export const MeshStatCards: React.FC<MeshStatCardsProps> = ({
         <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between' }}>
           <div>
             <div style={{ fontSize: '1.75rem', fontWeight: 800, color: '#ffffff', lineHeight: 1 }}>
-              {pendingApprovals}
+              {isLoading ? '...' : displayApprovals}
             </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: '4px', marginTop: '6px' }}>
               <span style={{
@@ -198,11 +208,11 @@ export const MeshStatCards: React.FC<MeshStatCardsProps> = ({
                 fontWeight: 700,
                 padding: '1px 6px',
                 borderRadius: '9999px',
-                background: 'rgba(245, 158, 11, 0.15)',
-                color: '#fbbf24',
-                border: '1px solid rgba(245, 158, 11, 0.3)'
+                background: displayApprovals > 0 ? 'rgba(245, 158, 11, 0.15)' : 'rgba(16, 185, 129, 0.15)',
+                color: displayApprovals > 0 ? '#fbbf24' : '#34d399',
+                border: displayApprovals > 0 ? '1px solid rgba(245, 158, 11, 0.3)' : '1px solid rgba(16, 185, 129, 0.3)'
               }}>
-                Action needed
+                {displayApprovals > 0 ? 'Action needed' : 'Queue clear'}
               </span>
             </div>
           </div>
@@ -210,7 +220,7 @@ export const MeshStatCards: React.FC<MeshStatCardsProps> = ({
           <svg width="60" height="28" viewBox="0 0 60 28">
             <polyline
               fill="none"
-              stroke="#fbbf24"
+              stroke={displayApprovals > 0 ? '#fbbf24' : '#10b981'}
               strokeWidth="2"
               points="0,18 12,14 24,19 36,10 48,12 60,6"
             />

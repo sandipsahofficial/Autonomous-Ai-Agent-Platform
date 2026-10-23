@@ -2,9 +2,17 @@ from typing import Optional, List
 from fastapi import APIRouter, Depends, HTTPException, Query, status, BackgroundTasks
 from sqlalchemy.orm import Session
 from app.database import get_db, SessionLocal
-from app.models.task import Task, Subtask, TaskStatus, SubtaskStatus
-from app.schemas.task import TaskCreate, TaskResponse, TaskListResponse, SubtaskCreate, SubtaskResponse
+from app.models.task import Task, Subtask, ExecutionEvent, TaskStatus, SubtaskStatus
+from app.schemas.task import (
+    TaskCreate,
+    TaskResponse,
+    TaskListResponse,
+    SubtaskCreate,
+    SubtaskResponse,
+    TaskTracesResponse,
+)
 from app.agents.graph import build_multi_agent_graph
+from app.services.trace_service import record_execution_event
 
 router = APIRouter(prefix="/tasks", tags=["Tasks"])
 
@@ -35,6 +43,15 @@ def run_agent_task_background(task_id: str, goal: str):
         if t:
             t.status = TaskStatus.RUNNING
             db.commit()
+
+        record_execution_event(
+            task_id=task_id,
+            event_type="TASK_STARTED",
+            message=f"Starting multi-agent execution DAG for goal: {goal}",
+            agent_name="system",
+            step_index=0,
+            db=db,
+        )
 
         final_state = graph.invoke(initial_state, config=config)
 
@@ -67,18 +84,53 @@ def run_agent_task_background(task_id: str, goal: str):
                     )
                     db.add(subtask)
 
+            subtask_count = len(final_state.get("subtasks", []))
+            if subtask_count > 0:
+                record_execution_event(
+                    task_id=task_id,
+                    event_type="PLANNER_COMPLETED",
+                    message=f"Planner agent generated {subtask_count} subtasks",
+                    agent_name="planner",
+                    step_index=1,
+                    db=db,
+                )
+
             t.current_step = final_state.get("current_step", 1)
             t.token_usage = final_state.get("token_usage", 0)
             t.estimated_cost_usd = final_state.get("estimated_cost_usd", 0.0)
 
             if has_interrupt:
                 t.status = TaskStatus.WAITING_APPROVAL
+                record_execution_event(
+                    task_id=task_id,
+                    event_type="TASK_PAUSED",
+                    message="Task execution paused: Sensitive action requires human operator approval",
+                    agent_name="system",
+                    step_index=t.current_step,
+                    db=db,
+                )
             elif final_state.get("error_message"):
                 t.status = TaskStatus.FAILED
                 t.error_message = final_state.get("error_message")
+                record_execution_event(
+                    task_id=task_id,
+                    event_type="TASK_FAILED",
+                    message=f"Task terminated with error: {final_state.get('error_message')}",
+                    agent_name="system",
+                    step_index=t.current_step,
+                    db=db,
+                )
             elif final_state.get("is_completed"):
                 t.status = TaskStatus.COMPLETED
                 t.final_output = final_state.get("final_output") or final_state.get("current_result")
+                record_execution_event(
+                    task_id=task_id,
+                    event_type="TASK_COMPLETED",
+                    message="Task completed all subtasks successfully",
+                    agent_name="system",
+                    step_index=t.current_step,
+                    db=db,
+                )
             else:
                 t.status = TaskStatus.RUNNING
 
@@ -92,6 +144,13 @@ def run_agent_task_background(task_id: str, goal: str):
                 t.status = TaskStatus.FAILED
                 t.error_message = f"Execution failed: {str(exc)}"
                 db.commit()
+                record_execution_event(
+                    task_id=task_id,
+                    event_type="TASK_FAILED",
+                    message=f"Execution error: {str(exc)}",
+                    agent_name="system",
+                    db=db,
+                )
         except Exception:
             pass
     finally:
@@ -107,8 +166,42 @@ def create_task(payload: TaskCreate, background_tasks: BackgroundTasks, db: Sess
     db.add(task)
     db.commit()
     db.refresh(task)
+
+    record_execution_event(
+        task_id=task.id,
+        event_type="TASK_CREATED",
+        message=f"Mission initialized with goal: '{task.goal}'",
+        agent_name="system",
+        step_index=0,
+        db=db,
+    )
+
     background_tasks.add_task(run_agent_task_background, task.id, task.goal)
     return task
+
+
+@router.get("/{task_id}/traces", response_model=TaskTracesResponse)
+def get_task_traces(task_id: str, db: Session = Depends(get_db)):
+    """
+    Retrieve structured timeline of execution events for a task.
+    """
+    task = db.query(Task).filter(Task.id == task_id).first()
+    if not task:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Task with ID {task_id} not found",
+        )
+    events = (
+        db.query(ExecutionEvent)
+        .filter(ExecutionEvent.task_id == task_id)
+        .order_by(ExecutionEvent.created_at.asc())
+        .all()
+    )
+    return TaskTracesResponse(
+        task_id=task_id,
+        total_events=len(events),
+        events=events,
+    )
 
 
 @router.get("", response_model=TaskListResponse)

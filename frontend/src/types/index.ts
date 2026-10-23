@@ -68,3 +68,51 @@ export interface PendingApprovalsListResponse {
   total: number;
   approvals: PendingApprovalItem[];
 }
+
+export interface FleetMetrics {
+  total_tasks: number;
+  active_tasks: number;
+  completed_tasks: number;
+  failed_tasks: number;
+  pending_approvals: number;
+  completion_rate: number;
+  average_cost_usd: number;
+  total_cost_usd: number;
+  total_tokens: number;
+}
+
+export interface AgentMetricItem {
+  id: string;
+  name: string;
+  role: string;
+  assigned_agent: string;
+  status: string;
+  status_type: string;
+  runs: number;
+  success_rate: number;
+  usage_percent: number;
+  cost_usd: number;
+  last_active?: string | null;
+}
+
+export interface AgentMetricsListResponse {
+  total_agents: number;
+  agents: AgentMetricItem[];
+}
+
+export interface ExecutionEvent {
+  id: string;
+  task_id: string;
+  step_index: number;
+  event_type: string;
+  agent_name?: string | null;
+  message: string;
+  details?: Record<string, any> | null;
+  created_at: string;
+}
+
+export interface TaskTracesResponse {
+  task_id: string;
+  total_events: number;
+  events: ExecutionEvent[];
+}

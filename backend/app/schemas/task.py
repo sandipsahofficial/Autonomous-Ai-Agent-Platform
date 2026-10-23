@@ -63,3 +63,23 @@ class TaskResponse(TaskBase):
 class TaskListResponse(BaseModel):
     total: int
     tasks: List[TaskResponse]
+
+
+class ExecutionEventResponse(BaseModel):
+    id: str
+    task_id: str
+    step_index: int
+    event_type: str
+    agent_name: Optional[str] = None
+    message: str
+    details: Optional[dict] = None
+    created_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class TaskTracesResponse(BaseModel):
+    task_id: str
+    total_events: int
+    events: List[ExecutionEventResponse]
+

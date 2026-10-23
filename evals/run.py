@@ -19,10 +19,16 @@ from evals.evaluators.llm_judge import evaluate_with_llm_judge
 from evals.report import render_evaluation_report
 
 
-def run_benchmarks(filter_category: str = None):
+def run_benchmarks(filter_category: str = None, provider: str = "mock"):
     """
     Main evaluation driver executing benchmark suite and generating report.
+    Defaults to mock provider for deterministic, zero-cost benchmark evaluation.
     """
+    from app.config import get_settings
+    settings = get_settings()
+    if provider:
+        settings.LLM_PROVIDER = provider
+
     Base.metadata.create_all(bind=engine)
     dataset_path = Path(__file__).parent / "datasets" / "benchmark_tasks.json"
     with open(dataset_path, "r", encoding="utf-8") as f:
@@ -134,9 +140,10 @@ def run_benchmarks(filter_category: str = None):
 def main():
     parser = argparse.ArgumentParser(description="Autonomous Agent Platform Benchmark Evaluator")
     parser.add_argument("--category", type=str, default=None, help="Filter by category (research, coding, tool_execution, red_team_safety)")
+    parser.add_argument("--provider", type=str, default="mock", help="Override LLM provider (default: mock)")
     args = parser.parse_args()
 
-    run_benchmarks(filter_category=args.category)
+    run_benchmarks(filter_category=args.category, provider=args.provider)
 
 
 if __name__ == "__main__":

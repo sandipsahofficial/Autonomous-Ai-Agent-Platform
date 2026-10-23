@@ -10,6 +10,7 @@ from app.agents.checkpointer import get_checkpointer
 from app.tools.registry import default_tool_registry
 from app.safety.risk_scorer import assess_tool_risk
 from app.config import get_settings
+from app.services.trace_service import record_execution_event
 
 settings = get_settings()
 
@@ -49,6 +50,8 @@ def tool_executor_node(state: AgentState) -> AgentState:
     tool_name = pending.get("tool_name", "")
     args = pending.get("arguments", {})
 
+    task_id = state.get("task_id", "unknown")
+
     # 1. Assess Risk
     risk = assess_tool_risk(tool_name, args)
 
@@ -56,13 +59,22 @@ def tool_executor_node(state: AgentState) -> AgentState:
     # 2. Trigger LangGraph Interrupt for HIGH risk actions
     if risk.requires_human_approval:
         approval_payload = {
-            "task_id": state.get("task_id", "unknown"),
+            "task_id": task_id,
             "tool_name": tool_name,
             "arguments": args,
             "risk_level": risk.risk_level.value,
             "reason": risk.reason,
         }
         state["pending_approval"] = approval_payload
+
+        if task_id and task_id != "unknown":
+            record_execution_event(
+                task_id=task_id,
+                event_type="APPROVAL_REQUIRED",
+                message=f"High-risk action '{tool_name}' paused awaiting human approval",
+                agent_name="tool_gate",
+                details={"tool": tool_name, "risk": risk.risk_level.value, "reason": risk.reason},
+            )
 
         # Interrupt execution and wait for resume command
         decision: Dict[str, Any] = interrupt(approval_payload)
@@ -73,6 +85,14 @@ def tool_executor_node(state: AgentState) -> AgentState:
             human_approved = True
         else:
             rejection_reason = decision.get("feedback", "Rejected by human operator.")
+            if task_id and task_id != "unknown":
+                record_execution_event(
+                    task_id=task_id,
+                    event_type="APPROVAL_REJECTED",
+                    message=f"Operator rejected action '{tool_name}': {rejection_reason}",
+                    agent_name="operator",
+                    details={"feedback": rejection_reason},
+                )
             messages = list(state.get("messages", []))
             messages.append({
                 "role": "system",
@@ -90,6 +110,19 @@ def tool_executor_node(state: AgentState) -> AgentState:
         arguments=args,
         human_approved=human_approved,
     )
+
+    if task_id and task_id != "unknown":
+        record_execution_event(
+            task_id=task_id,
+            event_type="TOOL_EXECUTED",
+            message=f"Tool '{tool_name}' executed: {'Success' if result.error is None else 'Error'}",
+            agent_name="tool_gate",
+            details={
+                "tool": tool_name,
+                "risk_level": assessed_risk.risk_level.value,
+                "has_error": result.error is not None,
+            },
+        )
 
     # 4. Record output in state history
     messages = list(state.get("messages", []))
