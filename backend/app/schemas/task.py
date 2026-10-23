@@ -51,10 +51,10 @@ class TaskUpdate(BaseModel):
 
 class TaskResponse(TaskBase):
     id: str
-    user_id: str = "sandip_sah"
-    workspace_id: str = "default_workspace"
+    user_id: Optional[str] = "sandip_sah"
+    workspace_id: Optional[str] = "default_workspace"
     status: TaskStatus
-    current_stage: str = "planner"
+    current_stage: Optional[str] = "planner"
     current_step: int
     rework_count: int
     token_usage: int

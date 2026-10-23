@@ -11,7 +11,8 @@ from app.schemas.agent import (
     AgentPerformanceMetrics,
 )
 from app.services.agent_service import AgentService
-from app.api.memories import get_current_user_id
+from app.models.user import User, UserRole
+from app.auth.dependencies import get_current_user
 
 router = APIRouter(prefix="/agents", tags=["Agent Management"])
 
@@ -19,13 +20,13 @@ router = APIRouter(prefix="/agents", tags=["Agent Management"])
 @router.get("", response_model=AgentListResponse)
 def list_agents(
     workspace_id: Optional[str] = Query(None),
-    user_id: str = Depends(get_current_user_id),
+    current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
     """
     List all configured agents for the authenticated tenant.
     """
-    agents = AgentService.list_agents(db, user_id=user_id, workspace_id=workspace_id)
+    agents = AgentService.list_agents(db, user_id=current_user.id, workspace_id=workspace_id)
     return AgentListResponse(total=len(agents), agents=agents)
 
 
@@ -33,16 +34,21 @@ def list_agents(
 def create_agent(
     payload: AgentCreate,
     workspace_id: str = Query("default_workspace"),
-    user_id: str = Depends(get_current_user_id),
+    current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
     """
     Create a custom agent configuration.
     Validates tool permissions and safety policies on the backend.
     """
+    if current_user.role not in (UserRole.ADMIN.value, UserRole.OPERATOR.value):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=f"Forbidden: role '{current_user.role}' cannot create agents.",
+        )
     agent, err = AgentService.create_agent(
         db=db,
-        user_id=user_id,
+        user_id=current_user.id,
         workspace_id=workspace_id,
         name=payload.name,
         system_prompt=payload.system_prompt,
@@ -67,10 +73,10 @@ def create_agent(
 @router.get("/{agent_id}", response_model=AgentResponse)
 def get_agent(
     agent_id: str,
-    user_id: str = Depends(get_current_user_id),
+    current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    agent = AgentService.get_agent(db, agent_id=agent_id, user_id=user_id)
+    agent = AgentService.get_agent(db, agent_id=agent_id, user_id=current_user.id)
     if not agent:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -83,10 +89,15 @@ def get_agent(
 def update_agent(
     agent_id: str,
     payload: AgentUpdate,
-    user_id: str = Depends(get_current_user_id),
+    current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    agent = AgentService.get_agent(db, agent_id=agent_id, user_id=user_id)
+    if current_user.role not in (UserRole.ADMIN.value, UserRole.OPERATOR.value):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=f"Forbidden: role '{current_user.role}' cannot update agents.",
+        )
+    agent = AgentService.get_agent(db, agent_id=agent_id, user_id=current_user.id)
     if not agent:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -132,13 +143,18 @@ def update_agent(
 @router.delete("/{agent_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_agent(
     agent_id: str,
-    user_id: str = Depends(get_current_user_id),
+    current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
     """
     Deletes an agent only after verifying it is not referenced in active workflows.
     """
-    success, err = AgentService.delete_agent(db, agent_id=agent_id, user_id=user_id)
+    if current_user.role not in (UserRole.ADMIN.value, UserRole.OPERATOR.value):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=f"Forbidden: role '{current_user.role}' cannot delete agents.",
+        )
+    success, err = AgentService.delete_agent(db, agent_id=agent_id, user_id=current_user.id)
     if not success:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -149,10 +165,15 @@ def delete_agent(
 @router.post("/{agent_id}/duplicate", response_model=AgentResponse)
 def duplicate_agent(
     agent_id: str,
-    user_id: str = Depends(get_current_user_id),
+    current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    agent, err = AgentService.duplicate_agent(db, agent_id=agent_id, user_id=user_id)
+    if current_user.role not in (UserRole.ADMIN.value, UserRole.OPERATOR.value):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=f"Forbidden: role '{current_user.role}' cannot duplicate agents.",
+        )
+    agent, err = AgentService.duplicate_agent(db, agent_id=agent_id, user_id=current_user.id)
     if err or not agent:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -164,10 +185,10 @@ def duplicate_agent(
 @router.get("/{agent_id}/metrics", response_model=AgentPerformanceMetrics)
 def get_agent_metrics(
     agent_id: str,
-    user_id: str = Depends(get_current_user_id),
+    current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    agent = AgentService.get_agent(db, agent_id=agent_id, user_id=user_id)
+    agent = AgentService.get_agent(db, agent_id=agent_id, user_id=current_user.id)
     if not agent:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,

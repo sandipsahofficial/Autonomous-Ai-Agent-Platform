@@ -37,12 +37,18 @@ def get_evaluation_dashboard(
     completion_rate = round(completed / finalized * 100.0, 1) if finalized > 0 else 100.0
     failure_rate = round(failed / finalized * 100.0, 1) if finalized > 0 else 0.0
 
-    subtasks = db.query(Subtask).all()
+    task_ids = [t.id for t in tasks]
+    if task_ids:
+        subtasks = db.query(Subtask).filter(Subtask.task_id.in_(task_ids)).all()
+        events = db.query(ExecutionEvent).filter(ExecutionEvent.task_id.in_(task_ids)).all()
+    else:
+        subtasks = []
+        events = []
+
     completed_sub = sum(1 for s in subtasks if s.status == SubtaskStatus.COMPLETED)
     total_sub = sum(1 for s in subtasks if s.status in (SubtaskStatus.COMPLETED, SubtaskStatus.FAILED))
     reviewer_acceptance = round(completed_sub / total_sub * 100.0, 1) if total_sub > 0 else 100.0
 
-    events = db.query(ExecutionEvent).all()
     tool_events = [e for e in events if e.event_type == "TOOL_EXECUTION"]
     successful_tools = sum(1 for e in tool_events if e.status == "SUCCESS")
     tool_success_rate = round(successful_tools / len(tool_events) * 100.0, 1) if tool_events else 100.0

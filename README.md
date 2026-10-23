@@ -6,11 +6,41 @@
 [![PostgreSQL](https://img.shields.io/badge/PostgreSQL-16-blue.svg)](https://www.postgresql.org/)
 [![Docker](https://img.shields.io/badge/Docker-Hardened%20Sandbox-2496ED.svg)](https://www.docker.com/)
 [![React](https://img.shields.io/badge/React-18%20%2B%20Vite%20%2B%20TS-61DAFB.svg)](https://react.dev/)
-[![Backend Tests](https://img.shields.io/badge/Pytest%20Suites-79%2F79%20Passing-brightgreen.svg)]()
+[![Backend Tests](https://img.shields.io/badge/Pytest%20Suites-90%2F90%20Passing-brightgreen.svg)]()
 [![Safety Benchmark](https://img.shields.io/badge/Benchmark%20Pass%20Rate-100%25%20(20%2F20)-brightgreen.svg)]()
 [![Unsafe Actions](https://img.shields.io/badge/Unsafe%20Actions%20Executed-0-success.svg)]()
 
 A stateful, production-grade autonomous multi-agent platform designed for safe, auditable, and resilient task execution. Powered by a LangGraph directed state graph with 5 controlled agent stages (Planner, Researcher, Executor, Reviewer, Finalizer), Visual Workflow Automation Designer, persistent database-backed agent memory with tenant isolation, secure tool registry with AST verification, SSRF defense, human-in-the-loop (HITL) approval gates, and real-time observability.
+
+---
+
+## Phase 6: Independent Verification, Security Regression & Release Engineering
+
+Phase 6 provides independent verification across security, multi-tenancy, crash recovery, database schema migration integrity, live Ollama inference, and automated release gates:
+
+1. **Independent Verification & Security Hardening**:
+   - Closed critical production authorization bypass by strictly guarding `X-User-ID` testing headers behind `REQUIRE_AUTH=False`.
+   - Hardened HS256 JWT decoding with algorithm restriction enforcement (`HS256` only, rejecting `none`) and strict expiration checking.
+   - Enforced 3-tier RBAC (`admin`, `operator`, `viewer`) on all resource mutations across agents, workflows, schedules, documents, and memory.
+   - Extended multi-tenant data isolation across audit logs and workflow runs (`user_id` ownership verification).
+
+2. **Database Migration Lineage & Disaster Recovery**:
+   - Verified Alembic migrations forward and backward across revisions `001_initial_schema` -> `002_phase3_phase4_schema` -> `003_phase5_security_and_users`.
+   - Verified graceful fallback to SQLite when PostgreSQL native driver (`psycopg2`) is not installed on host.
+   - Tested rollback functionality (`alembic downgrade -1`) and zero-downtime re-upgrade.
+
+3. **Real Ollama Local Model Integration**:
+   - Verified real-time inference using local Ollama daemon (`http://localhost:11434`) running `llama3:latest`.
+   - Recorded token generation, $0.00 cost attribution, and error surfacing on unreachable endpoints.
+
+4. **Performance & Resource Benchmarking**:
+   - `GET /health`: 7.03ms average latency (P95 6.89ms).
+   - `GET /api/v1/tasks`: 20.12ms average latency (P95 25.90ms).
+   - `POST /api/v1/tasks` (Mission Ingestion): 35.85ms average latency.
+   - Concurrency throughput: 198.7 req/sec under 10 concurrent workers.
+
+5. **Automated Release Gate (`scripts/verify_release.py`)**:
+   - Self-verifying release script checking settings, database migrations, 90 backend pytest tests, 20 benchmark safety tasks, frontend compilation, and Docker specifications. Returns non-zero on failure.
 
 ---
 
@@ -376,20 +406,27 @@ SUMMARY METRICS & SAFETY COMPLIANCE:
 
 ---
 
-## Running Test Suites
+## Running Test Suites & Release Verification
 
 ```powershell
-# Run all backend unit, integration, and security tests (79 tests)
+# 1. Run Automated Release Verification Gate (Runs config, migrations, tests, evals, build, docker)
+.\.venv\Scripts\python.exe scripts/verify_release.py
+
+# 2. Run Performance and Resource Benchmarks
+.\.venv\Scripts\python.exe scripts/measure_performance.py
+
+# 3. Run all backend unit, integration, and security tests (90 tests)
 .\.venv\Scripts\python.exe -m pytest backend/tests
 
-# Run benchmark evaluation suite (20 tasks across research, coding, tools, and red-team safety)
+# 4. Run benchmark evaluation suite (20 tasks across research, coding, tools, and red-team safety)
 .\.venv\Scripts\python.exe -m evals.run
 
-# Build frontend production bundle
+# 5. Build frontend production bundle
 cd frontend && npm run build
 ```
 **Test Results**:
-- **Pytest**: `79 passed in 8.04s` (All 79 tests passing across auth/RBAC, rate limiting, correlation ID, error sanitization, recovery sweeper, approval workflow, health, memory isolation, tools security, AST calculator, SSRF defenses, traces, and multi-agent graph).
+- **Release Verification Gate**: Certified PASS (`scripts/verify_release.py` exited with code 0).
+- **Pytest**: `90 passed in 12.61s` (All 90 tests passing across auth/RBAC, rate limiting, correlation ID, error sanitization, recovery sweeper, approval workflow, health, memory isolation, tools security, AST calculator, SSRF defenses, traces, and multi-agent graph).
 - **Evaluations**: `20/20 passed (100.0% success rate)`, `0 unsafe actions executed`.
 - **Frontend**: `51 modules transformed`, clean production bundle with zero TypeScript errors.
 

@@ -10,17 +10,18 @@ from app.schemas.schedule import (
     ScheduleExecutionResponse,
 )
 from app.services.scheduler_service import SchedulerService
-from app.api.memories import get_current_user_id
+from app.models.user import User, UserRole
+from app.auth.dependencies import get_current_user
 
 router = APIRouter(prefix="/schedules", tags=["Workflow Scheduler"])
 
 
 @router.get("", response_model=ScheduleListResponse)
 def list_schedules(
-    user_id: str = Depends(get_current_user_id),
+    current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    items = SchedulerService.list_schedules(db, user_id=user_id)
+    items = SchedulerService.list_schedules(db, user_id=current_user.id)
     return ScheduleListResponse(total=len(items), schedules=items)
 
 
@@ -28,12 +29,17 @@ def list_schedules(
 def create_schedule(
     payload: ScheduleCreate,
     workspace_id: str = Query("default_workspace"),
-    user_id: str = Depends(get_current_user_id),
+    current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
+    if current_user.role not in (UserRole.ADMIN.value, UserRole.OPERATOR.value):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=f"Forbidden: role '{current_user.role}' cannot create schedules.",
+        )
     schedule = SchedulerService.create_schedule(
         db=db,
-        user_id=user_id,
+        user_id=current_user.id,
         workspace_id=workspace_id,
         payload=payload,
     )
@@ -43,10 +49,10 @@ def create_schedule(
 @router.get("/{schedule_id}", response_model=ScheduleResponse)
 def get_schedule(
     schedule_id: str,
-    user_id: str = Depends(get_current_user_id),
+    current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    schedule = SchedulerService.get_schedule(db, schedule_id=schedule_id, user_id=user_id)
+    schedule = SchedulerService.get_schedule(db, schedule_id=schedule_id, user_id=current_user.id)
     if not schedule:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -59,13 +65,18 @@ def get_schedule(
 def update_schedule(
     schedule_id: str,
     payload: ScheduleUpdate,
-    user_id: str = Depends(get_current_user_id),
+    current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
+    if current_user.role not in (UserRole.ADMIN.value, UserRole.OPERATOR.value):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=f"Forbidden: role '{current_user.role}' cannot update schedules.",
+        )
     schedule = SchedulerService.update_schedule(
         db=db,
         schedule_id=schedule_id,
-        user_id=user_id,
+        user_id=current_user.id,
         payload=payload,
     )
     if not schedule:
@@ -79,10 +90,15 @@ def update_schedule(
 @router.delete("/{schedule_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_schedule(
     schedule_id: str,
-    user_id: str = Depends(get_current_user_id),
+    current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    if not SchedulerService.delete_schedule(db, schedule_id=schedule_id, user_id=user_id):
+    if current_user.role not in (UserRole.ADMIN.value, UserRole.OPERATOR.value):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=f"Forbidden: role '{current_user.role}' cannot delete schedules.",
+        )
+    if not SchedulerService.delete_schedule(db, schedule_id=schedule_id, user_id=current_user.id):
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Schedule '{schedule_id}' not found.",
@@ -92,13 +108,18 @@ def delete_schedule(
 @router.post("/{schedule_id}/run-now", response_model=ScheduleExecutionResponse)
 def run_schedule_now(
     schedule_id: str,
-    user_id: str = Depends(get_current_user_id),
+    current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
     """
     Manually triggers an immediate run of a configured schedule.
     """
-    schedule = SchedulerService.get_schedule(db, schedule_id=schedule_id, user_id=user_id)
+    if current_user.role not in (UserRole.ADMIN.value, UserRole.OPERATOR.value):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=f"Forbidden: role '{current_user.role}' cannot execute schedules.",
+        )
+    schedule = SchedulerService.get_schedule(db, schedule_id=schedule_id, user_id=current_user.id)
     if not schedule:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,

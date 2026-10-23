@@ -1,6 +1,6 @@
 import ipaddress
 import socket
-from urllib.parse import urlparse
+from urllib.parse import urlparse, urljoin
 from typing import Optional, List
 import httpx
 from pydantic import BaseModel, Field
@@ -135,8 +135,10 @@ class ApprovedHttpGetTool(BaseTool):
                     loc = resp.headers.get("location")
                     if not loc:
                         break
+                    # Safely resolve relative redirects against current origin
+                    resolved_loc = urljoin(str(resp.url), loc)
                     # Validate redirected URL
-                    target_redirect = validate_target_url(loc, self.allowed_domains)
+                    target_redirect = validate_target_url(resolved_loc, self.allowed_domains)
                     resp = client.get(target_redirect)
 
                 text_content = resp.text[:max_bytes]

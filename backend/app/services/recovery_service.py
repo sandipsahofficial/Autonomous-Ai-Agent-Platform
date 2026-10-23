@@ -24,54 +24,65 @@ class TaskRecoveryService:
         now_utc = datetime.now(timezone.utc)
         stuck_threshold = now_utc - timedelta(seconds=timeout_seconds)
 
-        stuck_tasks = (
-            db.query(Task)
-            .filter(
-                Task.status.in_([TaskStatus.RUNNING, TaskStatus.PLANNING]),
-                Task.updated_at < stuck_threshold,
-            )
-            .all()
-        )
-
-        recovered_count = 0
-        for task in stuck_tasks:
-            task.status = TaskStatus.FAILED
-            task.error_message = (
-                f"Task execution timed out: no worker heartbeat recorded for > {timeout_seconds // 60} minutes. "
-                "Safe manual retry is available via /api/v1/tasks/{id}/retry."
-            )
-            record_execution_event(
-                task_id=task.id,
-                event_type="TASK_STUCK_TIMEOUT",
-                message="Automated recovery: marked stalled task as FAILED to unblock queue.",
-                agent_name="recovery_sweeper",
-                step_index=task.current_step,
-                status="ERROR",
-                details={"timeout_seconds": timeout_seconds, "last_updated": str(task.updated_at)},
-                db=db,
-            )
-            recovered_count += 1
-
-        # Also sweep stalled workflow runs
-        stuck_runs = (
-            db.query(WorkflowRun)
-            .filter(
-                WorkflowRun.status == "RUNNING",
-                WorkflowRun.updated_at < stuck_threshold,
-            )
-            .all()
-        )
-        for run in stuck_runs:
-            run.status = "FAILED"
-            run.error_message = f"Workflow run stalled: no activity past {timeout_seconds // 60} min threshold."
-
-        if recovered_count > 0 or stuck_runs:
-            db.commit()
-            logger.warning(
-                f"[Recovery] Swept {recovered_count} stalled tasks and {len(stuck_runs)} workflow runs."
+        try:
+            stuck_tasks = (
+                db.query(Task)
+                .filter(
+                    Task.status.in_([TaskStatus.RUNNING, TaskStatus.PLANNING]),
+                    Task.updated_at < stuck_threshold,
+                )
+                .all()
             )
 
-        return recovered_count
+            recovered_count = 0
+            for task in stuck_tasks:
+                # Race check: ensure task was not concurrently completed or cancelled
+                if task.status not in (TaskStatus.RUNNING, TaskStatus.PLANNING):
+                    continue
+
+                task.status = TaskStatus.FAILED
+                task.error_message = (
+                    f"Task execution timed out: no worker heartbeat recorded for > {timeout_seconds // 60} minutes. "
+                    "Safe manual retry is available via /api/v1/tasks/{id}/retry."
+                )
+                record_execution_event(
+                    task_id=task.id,
+                    event_type="TASK_STUCK_TIMEOUT",
+                    message="Automated recovery: marked stalled task as FAILED to unblock queue.",
+                    agent_name="recovery_sweeper",
+                    step_index=task.current_step,
+                    status="ERROR",
+                    details={"timeout_seconds": timeout_seconds, "last_updated": str(task.updated_at)},
+                    db=db,
+                )
+                recovered_count += 1
+
+            # Also sweep stalled workflow runs
+            stuck_runs = (
+                db.query(WorkflowRun)
+                .filter(
+                    WorkflowRun.status == "RUNNING",
+                    WorkflowRun.updated_at < stuck_threshold,
+                )
+                .all()
+            )
+            for run in stuck_runs:
+                if run.status != "RUNNING":
+                    continue
+                run.status = "FAILED"
+                run.error_message = f"Workflow run stalled: no activity past {timeout_seconds // 60} min threshold."
+
+            if recovered_count > 0 or stuck_runs:
+                db.commit()
+                logger.warning(
+                    f"[Recovery] Swept {recovered_count} stalled tasks and {len(stuck_runs)} workflow runs."
+                )
+
+            return recovered_count
+        except Exception as exc:
+            db.rollback()
+            logger.error(f"[Recovery] Error during stuck task sweep: {exc}")
+            raise
 
     @classmethod
     def cancel_task(cls, db: Session, task_id: str, operator_id: str) -> Tuple[bool, str]:

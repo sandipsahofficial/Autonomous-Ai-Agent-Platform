@@ -82,7 +82,8 @@ def create_access_token(
 def decode_access_token(token: str) -> Optional[Dict[str, Any]]:
     """
     Validates and decodes an HS256 JWT token.
-    Enforces signature authenticity and expiry check.
+    Enforces signature authenticity, algorithm restriction (HS256 only),
+    typ restriction (JWT), and expiry check.
     Returns decoded payload or None if invalid/expired.
     """
     try:
@@ -94,6 +95,13 @@ def decode_access_token(token: str) -> Optional[Dict[str, Any]]:
             return None
 
         header_b64, payload_b64, sig_b64 = parts
+
+        # Verify header algorithm restriction
+        header_bytes = _base64url_decode(header_b64)
+        header = json.loads(header_bytes.decode("utf-8"))
+        if header.get("alg") != "HS256" or header.get("typ") != "JWT":
+            return None
+
         signing_input = f"{header_b64}.{payload_b64}".encode("utf-8")
         expected_sig = hmac.new(secret_key, signing_input, hashlib.sha256).digest()
         provided_sig = _base64url_decode(sig_b64)
@@ -106,8 +114,8 @@ def decode_access_token(token: str) -> Optional[Dict[str, Any]]:
 
         # Verify expiration
         exp = payload.get("exp")
-        if exp and int(time.time()) > int(exp):
-            return None  # Token expired
+        if exp is None or int(time.time()) >= int(exp):
+            return None  # Token expired or missing exp
 
         return payload
     except Exception:

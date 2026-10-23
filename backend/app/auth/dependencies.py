@@ -32,7 +32,7 @@ def get_current_user(
                 headers={"WWW-Authenticate": "Bearer"},
             )
         user_id = payload.get("sub")
-        user = db.query(User).filter(User.id == user_id).first()
+        user = db.query(User).filter((User.id == user_id) | (User.username == user_id)).first()
         if not user or not user.is_active:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
@@ -61,8 +61,8 @@ def get_current_user(
             )
         return user
 
-    # 3. Explicit testing override via X-User-ID
-    if x_user_id:
+    # 3. Explicit testing override via X-User-ID (ONLY in non-production mode when require_auth is False)
+    if not require_auth and x_user_id:
         existing_user = db.query(User).filter(
             (User.id == x_user_id) | (User.username == x_user_id)
         ).first()

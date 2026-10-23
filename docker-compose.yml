@@ -1,5 +1,3 @@
-version: "3.8"
-
 networks:
   mesh_network:
     driver: bridge

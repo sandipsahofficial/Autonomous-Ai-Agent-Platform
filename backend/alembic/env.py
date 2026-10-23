@@ -21,9 +21,17 @@ if config.config_file_name is not None:
 # Set SQLAlchemy target metadata for autogenerate support
 target_metadata = Base.metadata
 
-# Override sqlalchemy.url with dynamic app settings
-settings = get_settings()
-config.set_main_option("sqlalchemy.url", settings.DATABASE_URL)
+# Configure dynamic database URL with driver fallback
+current_url = config.get_main_option("sqlalchemy.url")
+if not current_url or "postgres" in current_url:
+    settings = get_settings()
+    db_url = current_url or settings.DATABASE_URL
+    try:
+        if "postgres" in db_url:
+            import psycopg2
+    except ImportError:
+        db_url = "sqlite:///./dev.db"
+    config.set_main_option("sqlalchemy.url", db_url)
 
 
 def run_migrations_offline() -> None:
@@ -56,7 +64,9 @@ def run_migrations_online() -> None:
 
     with connectable.connect() as connection:
         context.configure(
-            connection=connection, target_metadata=target_metadata
+            connection=connection,
+            target_metadata=target_metadata,
+            render_as_batch=True,
         )
 
         with context.begin_transaction():

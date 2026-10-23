@@ -17,7 +17,8 @@ from app.schemas.workflow import (
 from app.services.workflow_service import WorkflowService
 from app.workflows.validator import WorkflowValidator
 from app.workflows.compiler import WorkflowCompiler
-from app.api.memories import get_current_user_id
+from app.auth.dependencies import get_current_user
+from app.models.user import User, UserRole
 
 router = APIRouter(prefix="/workflows", tags=["Visual Workflow Automation"])
 
@@ -34,10 +35,10 @@ def validate_workflow(definition: WorkflowDefinition):
 @router.get("", response_model=WorkflowListResponse)
 def list_workflows(
     workspace_id: Optional[str] = Query(None),
-    user_id: str = Depends(get_current_user_id),
+    current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    workflows = WorkflowService.list_workflows(db, user_id=user_id, workspace_id=workspace_id)
+    workflows = WorkflowService.list_workflows(db, user_id=current_user.id, workspace_id=workspace_id)
     return WorkflowListResponse(total=len(workflows), workflows=workflows)
 
 
@@ -45,10 +46,15 @@ def list_workflows(
 def create_workflow(
     payload: WorkflowCreate,
     workspace_id: str = Query("default_workspace"),
-    user_id: str = Depends(get_current_user_id),
+    current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    wf, val_err = WorkflowService.create_workflow(db, user_id, workspace_id, payload)
+    if current_user.role not in (UserRole.ADMIN.value, UserRole.OPERATOR.value):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=f"Forbidden: role '{current_user.role}' cannot create workflows.",
+        )
+    wf, val_err = WorkflowService.create_workflow(db, current_user.id, workspace_id, payload)
     if val_err:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
@@ -64,10 +70,10 @@ def create_workflow(
 @router.get("/{workflow_id}", response_model=WorkflowResponse)
 def get_workflow(
     workflow_id: str,
-    user_id: str = Depends(get_current_user_id),
+    current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    wf = WorkflowService.get_workflow(db, workflow_id, user_id)
+    wf = WorkflowService.get_workflow(db, workflow_id, current_user.id)
     if not wf:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -80,10 +86,15 @@ def get_workflow(
 def update_workflow(
     workflow_id: str,
     payload: WorkflowUpdate,
-    user_id: str = Depends(get_current_user_id),
+    current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    wf, val_err = WorkflowService.update_workflow(db, workflow_id, user_id, payload)
+    if current_user.role not in (UserRole.ADMIN.value, UserRole.OPERATOR.value):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=f"Forbidden: role '{current_user.role}' cannot update workflows.",
+        )
+    wf, val_err = WorkflowService.update_workflow(db, workflow_id, current_user.id, payload)
     if val_err:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
@@ -104,10 +115,15 @@ def update_workflow(
 @router.delete("/{workflow_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_workflow(
     workflow_id: str,
-    user_id: str = Depends(get_current_user_id),
+    current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    if not WorkflowService.delete_workflow(db, workflow_id, user_id):
+    if current_user.role not in (UserRole.ADMIN.value, UserRole.OPERATOR.value):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=f"Forbidden: role '{current_user.role}' cannot delete workflows.",
+        )
+    if not WorkflowService.delete_workflow(db, workflow_id, current_user.id):
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Workflow '{workflow_id}' not found.",
@@ -117,10 +133,15 @@ def delete_workflow(
 @router.post("/{workflow_id}/duplicate", response_model=WorkflowResponse)
 def duplicate_workflow(
     workflow_id: str,
-    user_id: str = Depends(get_current_user_id),
+    current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    wf = WorkflowService.duplicate_workflow(db, workflow_id, user_id)
+    if current_user.role not in (UserRole.ADMIN.value, UserRole.OPERATOR.value):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=f"Forbidden: role '{current_user.role}' cannot duplicate workflows.",
+        )
+    wf = WorkflowService.duplicate_workflow(db, workflow_id, current_user.id)
     if not wf:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -132,10 +153,10 @@ def duplicate_workflow(
 @router.get("/{workflow_id}/versions", response_model=List[WorkflowVersionResponse])
 def list_workflow_versions(
     workflow_id: str,
-    user_id: str = Depends(get_current_user_id),
+    current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    wf = WorkflowService.get_workflow(db, workflow_id, user_id)
+    wf = WorkflowService.get_workflow(db, workflow_id, current_user.id)
     if not wf:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -148,10 +169,15 @@ def list_workflow_versions(
 def dispatch_workflow_run(
     workflow_id: str,
     payload: WorkflowRunCreate,
-    user_id: str = Depends(get_current_user_id),
+    current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    wf = WorkflowService.get_workflow(db, workflow_id, user_id)
+    if current_user.role not in (UserRole.ADMIN.value, UserRole.OPERATOR.value):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=f"Forbidden: role '{current_user.role}' cannot execute workflows.",
+        )
+    wf = WorkflowService.get_workflow(db, workflow_id, current_user.id)
     if not wf:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -166,7 +192,7 @@ def dispatch_workflow_run(
     run = WorkflowCompiler.create_run(
         db=db,
         workflow=wf,
-        user_id=user_id,
+        user_id=current_user.id,
         workspace_id=wf.workspace_id,
         initial_inputs=payload.initial_inputs,
         goal_override=payload.goal,
@@ -177,10 +203,10 @@ def dispatch_workflow_run(
 @router.get("/{workflow_id}/runs", response_model=List[WorkflowRunResponse])
 def list_workflow_runs(
     workflow_id: str,
-    user_id: str = Depends(get_current_user_id),
+    current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    wf = WorkflowService.get_workflow(db, workflow_id, user_id)
+    wf = WorkflowService.get_workflow(db, workflow_id, current_user.id)
     if not wf:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -192,7 +218,7 @@ def list_workflow_runs(
 @router.get("/runs/{run_id}", response_model=WorkflowRunResponse)
 def get_workflow_run(
     run_id: str,
-    user_id: str = Depends(get_current_user_id),
+    current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
     run = db.query(WorkflowRun).filter(WorkflowRun.id == run_id).first()
@@ -201,6 +227,11 @@ def get_workflow_run(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"WorkflowRun '{run_id}' not found.",
         )
+    if current_user.role != UserRole.ADMIN.value and run.user_id != current_user.id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=f"Forbidden: access denied to workflow run '{run_id}'.",
+        )
     return run
 
 
@@ -208,12 +239,28 @@ def get_workflow_run(
 def step_workflow_run(
     run_id: str,
     node_id: str = Query(...),
-    user_id: str = Depends(get_current_user_id),
+    current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
     """
     Advances a specific node within a live workflow run and records telemetry.
     """
+    if current_user.role not in (UserRole.ADMIN.value, UserRole.OPERATOR.value):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=f"Forbidden: role '{current_user.role}' cannot step workflow runs.",
+        )
+    run = db.query(WorkflowRun).filter(WorkflowRun.id == run_id).first()
+    if not run:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"WorkflowRun '{run_id}' not found.",
+        )
+    if current_user.role != UserRole.ADMIN.value and run.user_id != current_user.id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=f"Forbidden: access denied to workflow run '{run_id}'.",
+        )
     try:
         updated_run = WorkflowCompiler.execute_sync_step(db, run_id, node_id)
         return updated_run
