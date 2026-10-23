@@ -143,6 +143,12 @@ class MockLLMProvider(BaseLLMProvider):
                     "            self.cache.popitem(last=False)\n"
                 )
                 explanation = "LRU Cache implementation with get and put operations."
+            elif "configuration" in prompt_lower or "config" in prompt_lower:
+                code_str = (
+                    "# Configuration summary file for workspace\n"
+                    "workspace_config = {'env': 'production', 'status': 'verified'}\n"
+                )
+                explanation = "Generates and writes configuration file summary inside workspace."
             elif "quicksort" in prompt_lower or "sort" in prompt_lower:
                 code_str = (
                     "def quicksort(arr: list) -> list:\n"

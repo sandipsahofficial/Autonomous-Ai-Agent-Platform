@@ -5,6 +5,10 @@ from app.config import get_settings
 from app.database import engine, Base
 import app.models  # Ensure all models are registered on Base.metadata
 from app.api.router import api_router
+from app.middleware.correlation import CorrelationIdMiddleware
+from app.middleware.security_headers import SecurityHeadersMiddleware
+from app.middleware.rate_limit import RateLimitMiddleware
+from app.middleware.error_handler import ErrorSanitizationMiddleware
 
 settings = get_settings()
 
@@ -13,9 +17,12 @@ settings = get_settings()
 async def lifespan(app: FastAPI):
     """
     Application startup and shutdown lifespan handler.
-    Ensures tables are created on startup.
+    Validates production readiness and ensures tables are created on startup.
     """
-    # Create tables if not existing (ideal for quick start / test sqlite)
+    # 1. Validate production readiness fail-fast checks
+    settings.validate_production_readiness()
+
+    # 2. Create tables if not existing (ideal for quick start / dev SQLite)
     try:
         Base.metadata.create_all(bind=engine)
     except Exception as exc:
@@ -31,10 +38,14 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-# Configure CORS to allow frontend communication
+# Middleware Stack (Execution order: ErrorSanitizer -> CorrelationId -> SecurityHeaders -> RateLimiter -> CORS)
+app.add_middleware(ErrorSanitizationMiddleware)
+app.add_middleware(CorrelationIdMiddleware)
+app.add_middleware(SecurityHeadersMiddleware)
+app.add_middleware(RateLimitMiddleware)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=settings.get_cors_origins(),
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -61,7 +72,7 @@ def read_root():
 @app.get("/api/v1/health")
 def health_check():
     """
-    Health check endpoint returning application status and active runtime configuration.
+    Liveness probe: verifies basic web service responsiveness.
     """
     return {
         "status": "healthy",
@@ -69,4 +80,39 @@ def health_check():
         "llm_provider": settings.LLM_PROVIDER,
         "max_rework_attempts": settings.MAX_REWORK_ATTEMPTS,
         "max_steps": settings.MAX_STEPS,
+    }
+
+
+@app.get("/ready")
+@app.get("/api/v1/ready")
+def readiness_check():
+    """
+    Readiness probe: explicitly verifies database connectivity, latency, and inference engine readiness.
+    Distinguishes liveness from backend dependency readiness.
+    """
+    import time
+    start_time = time.time()
+    db_ok = False
+    try:
+        from sqlalchemy import text
+        with engine.connect() as conn:
+            conn.execute(text("SELECT 1"))
+            db_ok = True
+    except Exception as exc:
+        db_err = str(exc)
+        return {
+            "status": "not_ready",
+            "database": "unreachable",
+            "error": "Database connectivity check failed.",
+        }
+
+    latency_ms = round((time.time() - start_time) * 1000, 2)
+    return {
+        "status": "ready",
+        "database": "connected",
+        "database_latency_ms": latency_ms,
+        "llm_provider": settings.LLM_PROVIDER,
+        "environment": settings.APP_ENV,
+        "auth_enforced": getattr(settings, "REQUIRE_AUTH", False),
+        "rate_limiting": getattr(settings, "RATE_LIMIT_ENABLED", True),
     }

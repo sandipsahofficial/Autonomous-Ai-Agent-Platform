@@ -48,6 +48,8 @@ htmlcov/
 # Logs & Databases
 *.log
 *.sqlite
+*.db
+backups/
 *.sqlite3
 
 # Node / Frontend

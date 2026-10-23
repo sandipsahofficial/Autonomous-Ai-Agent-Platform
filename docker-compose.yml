@@ -1,5 +1,13 @@
 version: "3.8"
 
+networks:
+  mesh_network:
+    driver: bridge
+
+volumes:
+  postgres_data:
+  mesh_workspace_data:
+
 services:
   postgres:
     image: postgres:16-alpine
@@ -9,15 +17,18 @@ services:
       POSTGRES_USER: ${POSTGRES_USER:-agent_admin}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-agent_secret_password}
       POSTGRES_DB: ${POSTGRES_DB:-agent_platform}
-    ports:
-      - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
+    networks:
+      - mesh_network
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-agent_admin} -d ${POSTGRES_DB:-agent_platform}"]
       interval: 5s
       timeout: 5s
       retries: 5
+    # Postgres port is not exposed publicly on host in production; accessible via mesh_network
+    expose:
+      - "5432"
 
   backend:
     build:
@@ -26,16 +37,42 @@ services:
     container_name: agent_backend
     restart: unless-stopped
     ports:
-      - "8000:8000"
+      - "${PORT:-8000}:8000"
     env_file:
       - .env
     environment:
       - DATABASE_URL=postgresql+psycopg2://${POSTGRES_USER:-agent_admin}:${POSTGRES_PASSWORD:-agent_secret_password}@postgres:5432/${POSTGRES_DB:-agent_platform}
+      - OLLAMA_BASE_URL=${OLLAMA_BASE_URL:-http://host.docker.internal:11434}
     volumes:
-      - ./backend:/app
+      - mesh_workspace_data:/app/workspace
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    networks:
+      - mesh_network
     depends_on:
       postgres:
         condition: service_healthy
+    deploy:
+      resources:
+        limits:
+          cpus: "2.0"
+          memory: 2048M
 
-volumes:
-  postgres_data:
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: agent_frontend
+    restart: unless-stopped
+    ports:
+      - "5173:80"
+    networks:
+      - mesh_network
+    depends_on:
+      backend:
+        condition: service_healthy
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 512M

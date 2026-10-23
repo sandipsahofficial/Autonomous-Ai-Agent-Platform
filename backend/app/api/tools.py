@@ -23,6 +23,7 @@ def execute_tool(payload: ToolExecutionRequest):
         tool_name=payload.tool_name,
         arguments=payload.arguments,
         human_approved=payload.human_approved,
+        idempotency_key=payload.idempotency_key,
     )
 
     return ToolExecutionResponse(
@@ -33,4 +34,5 @@ def execute_tool(payload: ToolExecutionRequest):
         risk_reason=risk.reason,
         output=result.output,
         error=result.error,
+        duration_ms=result.duration_ms,
     )

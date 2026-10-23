@@ -1,11 +1,18 @@
-from typing import List
+from typing import List, Dict
+from collections import Counter
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 from sqlalchemy import func
 from app.database import get_db
-from app.models.task import Task, Subtask, TaskStatus, SubtaskStatus
+from app.models.task import Task, Subtask, ExecutionEvent, TaskStatus, SubtaskStatus
 from app.models.audit import AuditLog
-from app.schemas.metrics import FleetMetricsResponse, AgentMetricsListResponse, AgentMetricItem
+from app.schemas.metrics import (
+    FleetMetricsResponse,
+    AgentMetricsListResponse,
+    AgentMetricItem,
+    EvaluationQualityMetrics,
+    FailureReasonItem,
+)
 
 router = APIRouter(prefix="/metrics", tags=["Metrics"])
 
@@ -153,3 +160,120 @@ def get_agent_metrics(db: Session = Depends(get_db)):
         )
 
     return AgentMetricsListResponse(total_agents=len(items), agents=items)
+
+
+@router.get("/quality", response_model=EvaluationQualityMetrics)
+def get_quality_metrics(db: Session = Depends(get_db)):
+    """
+    Substantiated evaluation and quality metrics across tasks, tools, reviewers, and recovery runs.
+    Calculates completion rate, reviewer acceptance rate, tool success rate, retry rate,
+    duration percentiles (p50, p95), LLM recovery counts, and categorized failure reasons.
+    """
+    tasks = db.query(Task).all()
+    subtasks = db.query(Subtask).all()
+    events = db.query(ExecutionEvent).all()
+
+    # 1. Task Completion Rate
+    completed_tasks = sum(1 for t in tasks if t.status == TaskStatus.COMPLETED)
+    failed_tasks = sum(1 for t in tasks if t.status == TaskStatus.FAILED)
+    finalized = completed_tasks + failed_tasks
+    task_completion_rate = round((completed_tasks / finalized * 100.0), 1) if finalized > 0 else 100.0
+
+    # 2. Reviewer Acceptance Rate
+    completed_subtasks = sum(1 for s in subtasks if s.status == SubtaskStatus.COMPLETED)
+    failed_subtasks = sum(1 for s in subtasks if s.status == SubtaskStatus.FAILED)
+    total_reviewed = completed_subtasks + failed_subtasks
+    reviewer_acceptance_rate = round((completed_subtasks / total_reviewed * 100.0), 1) if total_reviewed > 0 else 100.0
+
+    # 3. Tool Success Rate
+    tool_events = [e for e in events if e.event_type == "TOOL_EXECUTION"]
+    if tool_events:
+        successful_tools = sum(1 for e in tool_events if e.status == "SUCCESS")
+        tool_success_rate = round((successful_tools / len(tool_events) * 100.0), 1)
+    else:
+        tool_success_rate = 100.0
+
+    # 4. Retry Rate
+    tasks_with_retries = sum(
+        1 for t in tasks
+        if any(s.retry_count > 0 for s in t.subtasks)
+        or any(e.event_type in ("TASK_RETRIED", "REWORK_REQUESTED") for e in t.execution_events)
+    )
+    retry_rate = round((tasks_with_retries / len(tasks) * 100.0), 1) if tasks else 0.0
+
+    # 5. Duration Metrics (ms)
+    durations = [e.duration_ms for e in events if e.duration_ms is not None and e.duration_ms > 0]
+    if durations:
+        durations.sort()
+        average_duration_ms = round(sum(durations) / len(durations), 1)
+        p95_idx = min(int(len(durations) * 0.95), len(durations) - 1)
+        p95_duration_ms = round(durations[p95_idx], 1)
+    else:
+        average_duration_ms = 0.0
+        p95_duration_ms = 0.0
+
+    # 6. LLM Failures Count
+    llm_failures = sum(
+        1 for e in events
+        if e.status == "FAILED"
+        and (
+            e.event_type in ("REWORK_REQUESTED", "TASK_FAILED")
+            or (e.details and any(k in str(e.details).lower() for k in ("provider", "llm", "timeout", "parse_error")))
+        )
+    )
+
+    # 7. Approval Wait Time (avg seconds)
+    req_events: Dict[str, ExecutionEvent] = {}
+    wait_times: List[float] = []
+    for e in events:
+        if e.event_type == "APPROVAL_REQUESTED":
+            req_events[e.task_id] = e
+        elif e.event_type == "APPROVAL_DECIDED" and e.task_id in req_events:
+            wait_s = (e.created_at - req_events[e.task_id].created_at).total_seconds()
+            if wait_s >= 0:
+                wait_times.append(wait_s)
+    approval_wait_time_avg_s = round(sum(wait_times) / len(wait_times), 1) if wait_times else 0.0
+
+    # 8. Top Failure Reasons
+    reasons_counter = Counter()
+    for t in tasks:
+        if t.status == TaskStatus.FAILED and t.error_message:
+            # normalize common error patterns
+            msg = t.error_message.strip()
+            if "budget" in msg.lower():
+                reasons_counter["Budget or token limit exceeded"] += 1
+            elif "rework" in msg.lower() or "attempt" in msg.lower():
+                reasons_counter["Maximum rework cycles exhausted"] += 1
+            elif "timeout" in msg.lower():
+                reasons_counter["Execution or LLM timeout"] += 1
+            elif "rejected" in msg.lower():
+                reasons_counter["Action rejected by operator"] += 1
+            elif "ssrf" in msg.lower() or "permission" in msg.lower() or "security" in msg.lower():
+                reasons_counter["Security guardrail blocked request"] += 1
+            else:
+                reasons_counter[msg[:60]] += 1
+
+    for e in events:
+        if e.status == "FAILED" and e.message:
+            msg = e.message.strip()
+            if "ssrf" in msg.lower():
+                reasons_counter["SSRF / Localhost blocked"] += 1
+            elif "path traversal" in msg.lower():
+                reasons_counter["Path traversal rejected"] += 1
+
+    top_failure_reasons = [
+        FailureReasonItem(reason=r, count=c)
+        for r, c in reasons_counter.most_common(5)
+    ]
+
+    return EvaluationQualityMetrics(
+        task_completion_rate=task_completion_rate,
+        reviewer_acceptance_rate=reviewer_acceptance_rate,
+        tool_success_rate=tool_success_rate,
+        retry_rate=retry_rate,
+        average_duration_ms=average_duration_ms,
+        p95_duration_ms=p95_duration_ms,
+        llm_failures_count=llm_failures,
+        approval_wait_time_avg_s=approval_wait_time_avg_s,
+        top_failure_reasons=top_failure_reasons,
+    )

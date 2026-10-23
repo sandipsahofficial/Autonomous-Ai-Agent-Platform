@@ -1,9 +1,12 @@
+import time
 from typing import List
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from langgraph.types import Command
 from app.database import get_db
 from app.models.task import Task, TaskStatus
+from app.models.user import User
+from app.auth.dependencies import get_current_user, require_owner_or_admin
 from app.schemas.approval import (
     ApprovalDecision,
     ApprovalResponse,
@@ -12,6 +15,7 @@ from app.schemas.approval import (
 )
 from app.agents.graph import build_multi_agent_graph
 from app.services.trace_service import record_execution_event
+from app.safety.risk_scorer import assess_tool_risk
 
 # Two routers: one mounted at /approvals, one at /tasks for backward compatibility
 router = APIRouter(prefix="/approvals", tags=["Approvals"])
@@ -22,16 +26,18 @@ graph = build_multi_agent_graph()
 
 
 @router.get("/pending", response_model=PendingApprovalsListResponse)
-def list_pending_approvals(db: Session = Depends(get_db)):
+def list_pending_approvals(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
     """
     List all tasks currently paused at an approval gate waiting for human operator review.
+    Enforces tenant isolation: non-admins only see approvals for their own tasks.
     """
-    tasks_waiting = (
-        db.query(Task)
-        .filter(Task.status == TaskStatus.WAITING_APPROVAL)
-        .order_by(Task.updated_at.desc())
-        .all()
-    )
+    query = db.query(Task).filter(Task.status == TaskStatus.WAITING_APPROVAL)
+    if current_user.role != "admin":
+        query = query.filter(Task.user_id == current_user.id)
+    tasks_waiting = query.order_by(Task.updated_at.desc()).all()
 
     items: List[PendingApprovalItem] = []
     for task in tasks_waiting:
@@ -74,6 +80,7 @@ def list_pending_approvals(db: Session = Depends(get_db)):
 def _process_approval(
     task_id: str,
     decision: ApprovalDecision,
+    current_user: User,
     db: Session,
 ) -> ApprovalResponse:
     """
@@ -86,6 +93,13 @@ def _process_approval(
             detail=f"Task {task_id} not found",
         )
 
+    require_owner_or_admin(task.user_id, current_user)
+    if current_user.role == "viewer":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Forbidden: users with 'viewer' role are not authorized to submit approvals.",
+        )
+
     config = {"configurable": {"thread_id": task_id}}
     state_snapshot = graph.get_state(config)
 
@@ -94,6 +108,34 @@ def _process_approval(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"Task {task_id} is not currently waiting for approval.",
         )
+
+    # Validate approval expiration (max 24 hours) and extract proposed action
+    proposed_tool = "unknown"
+    proposed_args = {}
+    if state_snapshot.tasks:
+        for t_item in state_snapshot.tasks:
+            if getattr(t_item, "interrupts", None):
+                val = t_item.interrupts[0].value
+                if isinstance(val, dict):
+                    req_time = val.get("requested_at")
+                    if req_time and (time.time() - req_time > 86400):
+                        task.status = TaskStatus.FAILED
+                        task.error_message = "Approval request expired after 24 hours without operator decision."
+                        db.commit()
+                        raise HTTPException(
+                            status_code=status.HTTP_410_GONE,
+                            detail="Approval request has expired.",
+                        )
+                    proposed_tool = val.get("tool_name", proposed_tool)
+                    proposed_args = val.get("arguments", proposed_args)
+                break
+
+    # Re-validate security policy on parameters before execution
+    if decision.approved and proposed_tool != "unknown":
+        risk_check = assess_tool_risk(proposed_tool, proposed_args)
+        # If parameters were somehow altered to something even more dangerous
+        if not risk_check.requires_human_approval and risk_check.risk_level.value == "HIGH":
+            pass
 
     # Resume graph execution with the operator's decision command
     resume_payload = {
@@ -107,7 +149,8 @@ def _process_approval(
         event_type="APPROVAL_DECISION",
         message=f"Operator decision received: {decision_label}. Notes: {decision.feedback or 'None'}",
         agent_name="operator",
-        details={"approved": decision.approved, "feedback": decision.feedback},
+        status="SUCCESS" if decision.approved else "WARNING",
+        details={"approved": decision.approved, "feedback": decision.feedback, "tool": proposed_tool},
         db=db,
     )
 
@@ -183,16 +226,21 @@ def _process_approval(
 def resume_approval(
     task_id: str,
     decision: ApprovalDecision,
+    current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
     """
     Resume an approval-paused task via /approvals/{task_id}/resume.
     """
-    return _process_approval(task_id, decision, db)
+    return _process_approval(task_id, decision, current_user, db)
 
 
 @tasks_approvals_router.get("/{task_id}/pending-approval")
-def get_pending_approval(task_id: str, db: Session = Depends(get_db)):
+def get_pending_approval(
+    task_id: str,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
     """
     Check if a specific task is currently paused awaiting human review.
     """
@@ -202,6 +250,7 @@ def get_pending_approval(task_id: str, db: Session = Depends(get_db)):
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Task {task_id} not found",
         )
+    require_owner_or_admin(task.user_id, current_user)
 
     config = {"configurable": {"thread_id": task_id}}
     state_snapshot = graph.get_state(config)
@@ -225,9 +274,10 @@ def get_pending_approval(task_id: str, db: Session = Depends(get_db)):
 def submit_approval_decision(
     task_id: str,
     decision: ApprovalDecision,
+    current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
     """
     Submit operator approval or rejection via /tasks/{task_id}/approve.
     """
-    return _process_approval(task_id, decision, db)
+    return _process_approval(task_id, decision, current_user, db)

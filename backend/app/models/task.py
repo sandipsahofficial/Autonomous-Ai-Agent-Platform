@@ -51,6 +51,8 @@ class Task(Base):
     __tablename__ = "tasks"
 
     id = Column(String(36), primary_key=True, default=generate_uuid, index=True)
+    user_id = Column(String(64), default="sandip_sah", nullable=False, index=True)
+    workspace_id = Column(String(64), default="default_workspace", nullable=False, index=True)
     goal = Column(Text, nullable=False)
     status = Column(
         SQLEnum(TaskStatus, native_enum=False),
@@ -58,6 +60,7 @@ class Task(Base):
         nullable=False,
         index=True,
     )
+    current_stage = Column(String(32), default="planner", nullable=False)
     current_step = Column(Integer, default=0, nullable=False)
     rework_count = Column(Integer, default=0, nullable=False)
     token_usage = Column(Integer, default=0, nullable=False)
@@ -104,12 +107,15 @@ class Subtask(Base):
     order_index = Column(Integer, nullable=False)
     title = Column(String(255), nullable=False)
     description = Column(Text, nullable=False)
-    assigned_agent = Column(String(64), nullable=False)  # "researcher" or "coder"
+    assigned_agent = Column(String(64), nullable=False)  # "researcher", "executor", or legacy "coder"
     status = Column(
         SQLEnum(SubtaskStatus, native_enum=False),
         default=SubtaskStatus.PENDING,
         nullable=False,
     )
+    stage = Column(String(32), default="pending", nullable=False)
+    dependencies = Column(JSON, nullable=True, default=list)
+    retry_count = Column(Integer, default=0, nullable=False)
     result = Column(Text, nullable=True)
 
     created_at = Column(DateTime(timezone=True), default=utc_now, nullable=False)
@@ -141,6 +147,9 @@ class ExecutionEvent(Base):
     step_index = Column(Integer, default=0, nullable=False)
     event_type = Column(String(64), nullable=False, index=True)
     agent_name = Column(String(64), nullable=True, index=True)
+    status = Column(String(32), default="INFO", nullable=False)
+    duration_ms = Column(Float, nullable=True)
+    idempotency_key = Column(String(64), nullable=True, index=True)
     message = Column(Text, nullable=False)
     details = Column(JSON, nullable=True)
 

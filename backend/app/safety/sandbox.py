@@ -126,8 +126,10 @@ class SandboxExecutor:
         Used when Docker daemon is not running during local test cycles.
         """
         try:
+            import sys
+            python_bin = sys.executable or "python"
             # Run python with isolated flag (-I) to ignore user site-packages and environment
-            cmd = ["py", "-I", "-u", "-c", code]
+            cmd = [python_bin, "-I", "-u", "-c", code]
             proc = subprocess.run(
                 cmd,
                 capture_output=True,

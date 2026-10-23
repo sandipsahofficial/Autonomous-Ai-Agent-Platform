@@ -13,9 +13,13 @@ export const MeshSidebar: React.FC<MeshSidebarProps> = ({
 }) => {
   const navItems = [
     { id: 'overview', label: 'Overview', icon: '▦' },
+    { id: 'workflows', label: 'Workflows', icon: '☍' },
     { id: 'fleet', label: 'Agent fleet', icon: '☵' },
     { id: 'runs', label: 'Runs & traces', icon: '◰' },
-    { id: 'knowledge', label: 'Knowledge', icon: '◫' },
+    { id: 'knowledge', label: 'Knowledge & Docs', icon: '◫' },
+    { id: 'schedules', label: 'Schedules', icon: '⏱' },
+    { id: 'templates', label: 'Templates', icon: '📑' },
+    { id: 'evaluations', label: 'Evaluations', icon: '📊' },
     { id: 'guardrails', label: 'Guardrails', icon: '🛡' },
     { id: 'audit', label: 'Audit Log', icon: '📜' },
   ];

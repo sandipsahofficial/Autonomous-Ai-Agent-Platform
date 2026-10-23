@@ -50,11 +50,37 @@ try:
         TOKEN_BUDGET: int = 50000
         COST_BUDGET_USD: float = 2.00
 
+        # Phase 5 Security & Production Hardening
+        JWT_SECRET_KEY: str = "mesh_insecure_development_secret_change_in_production"
+        REQUIRE_AUTH: bool = False
+        ALLOWED_ORIGINS: str = "http://localhost:5173,http://127.0.0.1:5173,http://localhost:3000"
+        RATE_LIMIT_ENABLED: bool = True
+        LOG_LEVEL: str = "INFO"
+
         model_config = SettingsConfigDict(
             env_file=(str(ROOT_ENV_PATH), str(BACKEND_ENV_PATH), ".env"),
             env_file_encoding="utf-8",
             extra="ignore",
         )
+
+        def get_cors_origins(self) -> list[str]:
+            if self.APP_ENV == "development" and self.APP_DEBUG:
+                return ["*"]
+            return [o.strip() for o in self.ALLOWED_ORIGINS.split(",") if o.strip()]
+
+        def validate_production_readiness(self) -> None:
+            """
+            Fail-fast validation for production deployments.
+            Prevents deploying with development debug flags or default secrets.
+            """
+            if self.APP_ENV == "production":
+                if self.APP_DEBUG:
+                    raise ValueError("CRITICAL: APP_DEBUG must be False in production.")
+                if self.JWT_SECRET_KEY == "mesh_insecure_development_secret_change_in_production":
+                    raise ValueError("CRITICAL: JWT_SECRET_KEY must be configured with a secure secret in production.")
+                origins = self.get_cors_origins()
+                if "*" in origins:
+                    raise ValueError("CRITICAL: Wildcard '*' CORS origin is strictly forbidden in production.")
 
 except ImportError:
     # Graceful fallback for lightweight local host environments without pydantic-settings
@@ -88,6 +114,28 @@ except ImportError:
         MAX_STEPS: int = int(os.getenv("MAX_STEPS", "15"))
         TOKEN_BUDGET: int = int(os.getenv("TOKEN_BUDGET", "50000"))
         COST_BUDGET_USD: float = float(os.getenv("COST_BUDGET_USD", "2.00"))
+
+        # Phase 5 Security & Production Hardening
+        JWT_SECRET_KEY: str = os.getenv("JWT_SECRET_KEY", "mesh_insecure_development_secret_change_in_production")
+        REQUIRE_AUTH: bool = os.getenv("REQUIRE_AUTH", "false").lower() in ("true", "1", "yes")
+        ALLOWED_ORIGINS: str = os.getenv("ALLOWED_ORIGINS", "http://localhost:5173,http://127.0.0.1:5173,http://localhost:3000")
+        RATE_LIMIT_ENABLED: bool = os.getenv("RATE_LIMIT_ENABLED", "true").lower() in ("true", "1", "yes")
+        LOG_LEVEL: str = os.getenv("LOG_LEVEL", "INFO")
+
+        def get_cors_origins(self) -> list[str]:
+            if self.APP_ENV == "development" and self.APP_DEBUG:
+                return ["*"]
+            return [o.strip() for o in self.ALLOWED_ORIGINS.split(",") if o.strip()]
+
+        def validate_production_readiness(self) -> None:
+            if self.APP_ENV == "production":
+                if self.APP_DEBUG:
+                    raise ValueError("CRITICAL: APP_DEBUG must be False in production.")
+                if self.JWT_SECRET_KEY == "mesh_insecure_development_secret_change_in_production":
+                    raise ValueError("CRITICAL: JWT_SECRET_KEY must be configured with a secure secret in production.")
+                origins = self.get_cors_origins()
+                if "*" in origins:
+                    raise ValueError("CRITICAL: Wildcard '*' CORS origin is strictly forbidden in production.")
 
 
 @lru_cache()

@@ -146,6 +146,28 @@ export const ExecutionTracesViewer: React.FC<Props> = ({ taskId }) => {
                           @{event.agent_name}
                         </span>
                       )}
+                      {event.status && event.status !== 'INFO' && (
+                        <span style={{
+                          fontSize: '0.62rem',
+                          fontWeight: 700,
+                          padding: '1px 5px',
+                          borderRadius: '4px',
+                          background: event.status === 'SUCCESS' ? 'rgba(16, 185, 129, 0.2)' : 'rgba(244, 63, 94, 0.2)',
+                          color: event.status === 'SUCCESS' ? '#34d399' : '#fb7185',
+                        }}>
+                          {event.status}
+                        </span>
+                      )}
+                      {event.duration_ms != null && event.duration_ms > 0 && (
+                        <span style={{ fontSize: '0.65rem', color: '#10b981', fontWeight: 600 }}>
+                          ⏱ {event.duration_ms.toFixed(1)}ms
+                        </span>
+                      )}
+                      {event.idempotency_key && (
+                        <span style={{ fontSize: '0.62rem', color: '#64748b', fontFamily: 'monospace' }}>
+                          🔑 {event.idempotency_key.slice(-8)}
+                        </span>
+                      )}
                       <span style={{ fontSize: '0.65rem', color: '#64748b' }}>
                         {new Date(event.created_at).toLocaleTimeString()}
                       </span>

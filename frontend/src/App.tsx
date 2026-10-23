@@ -12,6 +12,14 @@ import { NewMissionModal } from './components/NewMissionModal';
 import { AgentTimeline } from './components/AgentTimeline';
 import { AuditLogViewer } from './components/AuditLogViewer';
 import { ExecutionTracesViewer } from './components/ExecutionTracesViewer';
+import { MeshKnowledgeAndMemory } from './components/MeshKnowledgeAndMemory';
+import { WorkflowDesigner } from './components/WorkflowDesigner';
+import { AgentBuilder } from './components/AgentBuilder';
+import { WorkflowScheduler } from './components/WorkflowScheduler';
+import { DocumentManager } from './components/DocumentManager';
+import { TemplateLibrary } from './components/TemplateLibrary';
+import { EvaluationDashboard } from './components/EvaluationDashboard';
+import { NotificationCenter } from './components/NotificationCenter';
 
 export const App: React.FC = () => {
   const [activeTab, setActiveTab] = useState<string>('overview');
@@ -221,33 +229,8 @@ export const App: React.FC = () => {
                   </span>
                 </div>
 
-                {/* Notifications */}
-                <button style={{
-                  background: '#0e1524',
-                  border: '1px solid #1f2b42',
-                  borderRadius: '8px',
-                  width: '32px',
-                  height: '32px',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  color: '#94a3b8',
-                  cursor: 'pointer',
-                  position: 'relative'
-                }}>
-                  <span>🔔</span>
-                  {pendingApprovals.length > 0 && (
-                    <span style={{
-                      position: 'absolute',
-                      top: '4px',
-                      right: '4px',
-                      width: '6px',
-                      height: '6px',
-                      borderRadius: '50%',
-                      background: '#f43f5e'
-                    }}></span>
-                  )}
-                </button>
+                {/* In-App Notifications Center (Phase 4) */}
+                <NotificationCenter />
 
                 {/* New Mission Button */}
                 <button
@@ -331,50 +314,29 @@ export const App: React.FC = () => {
                 </>
               )}
 
-              {/* Dedicated Agent Fleet View (Phase 2D) */}
-              {activeTab === 'fleet' && (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-                  <div style={{
-                    background: '#0d1320',
-                    border: '1px solid #1a253a',
-                    borderRadius: '14px',
-                    padding: '20px',
-                    display: 'flex',
-                    justifyContent: 'space-between',
-                    alignItems: 'center'
-                  }}>
-                    <div>
-                      <h3 style={{ fontSize: '1.1rem', fontWeight: 800, color: '#f1f5f9' }}>
-                        Autonomous Agent Fleet
-                      </h3>
-                      <p style={{ fontSize: '0.78rem', color: '#94a3b8', marginTop: '4px' }}>
-                        Configured specialists operating under human-in-the-loop security oversight
-                      </p>
-                    </div>
-                    <div style={{ display: 'flex', gap: '12px' }}>
-                      <span style={{
-                        padding: '4px 10px',
-                        background: 'rgba(2, 132, 199, 0.15)',
-                        border: '1px solid rgba(2, 132, 199, 0.3)',
-                        borderRadius: '6px',
-                        fontSize: '0.72rem',
-                        color: '#38bdf8',
-                        fontWeight: 700
-                      }}>
-                        4 Specialists Online
-                      </span>
-                    </div>
-                  </div>
+              {/* Visual Workflow Automation Designer (Phase 4) */}
+              {activeTab === 'workflows' && (
+                <WorkflowDesigner />
+              )}
 
-                  <MeshAgentFleetTable
-                    agents={agentMetrics}
-                    onNewAgent={() => setIsNewMissionOpen(true)}
-                  />
+              {/* Dedicated Agent Fleet & Visual Agent Builder (Phase 4) */}
+              {activeTab === 'fleet' && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
+                  <AgentBuilder />
+                  <div style={{ borderTop: '1px solid #1a253a', paddingTop: '20px' }}>
+                    <h4 style={{ fontSize: '1rem', fontWeight: 800, color: '#f1f5f9', marginBottom: '14px' }}>
+                      Fleet Performance & Live Execution Metrics
+                    </h4>
+                    <MeshAgentFleetTable
+                      agents={agentMetrics}
+                      onNewAgent={() => setIsNewMissionOpen(true)}
+                    />
+                  </div>
                 </div>
               )}
 
-              {/* Runs & Traces Tab (Phase 2C) */}
-              {(activeTab === 'runs' || activeTab === 'guardrails') && (
+              {/* Runs & Traces Tab */}
+              {activeTab === 'runs' && (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
                   {/* Mission Selector bar if multiple missions exist */}
                   {tasks.length > 0 && (
@@ -483,32 +445,101 @@ export const App: React.FC = () => {
                 </div>
               )}
 
-              {/* Knowledge Tab */}
+              {/* Knowledge & Document Retrieval Tab (Phase 4 & Phase 3) */}
               {activeTab === 'knowledge' && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '28px' }}>
+                  <DocumentManager />
+                  <div style={{ borderTop: '1px solid #1a253a', paddingTop: '24px' }}>
+                    <h4 style={{ fontSize: '1rem', fontWeight: 800, color: '#f1f5f9', marginBottom: '14px' }}>
+                      Persistent Agent Memory Store
+                    </h4>
+                    <MeshKnowledgeAndMemory />
+                  </div>
+                </div>
+              )}
+
+              {/* Workflow Scheduler Tab (Phase 4) */}
+              {activeTab === 'schedules' && (
+                <WorkflowScheduler />
+              )}
+
+              {/* Template Library Tab (Phase 4) */}
+              {activeTab === 'templates' && (
+                <TemplateLibrary onWorkflowCloned={() => setActiveTab('workflows')} />
+              )}
+
+              {/* Evaluation & Benchmarking Dashboard Tab (Phase 4) */}
+              {activeTab === 'evaluations' && (
+                <EvaluationDashboard />
+              )}
+
+              {/* Guardrails & Safety Architecture Tab (Phase 3) */}
+              {activeTab === 'guardrails' && (
                 <div style={{
                   background: '#0d1320',
                   border: '1px solid #1a253a',
                   borderRadius: '16px',
-                  padding: '24px'
+                  padding: '24px',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '20px'
                 }}>
-                  <h3 style={{ fontSize: '1.05rem', fontWeight: 700, color: '#f1f5f9', marginBottom: '8px' }}>
-                    Knowledge & Tool Registry
-                  </h3>
-                  <p style={{ fontSize: '0.78rem', color: '#94a3b8', marginBottom: '20px' }}>
-                    Available sandbox capabilities, file system permissions, and LLM providers
-                  </p>
+                  <div>
+                    <h3 style={{ fontSize: '1.1rem', fontWeight: 800, color: '#f1f5f9' }}>
+                      Operational Guardrails & Safety Architecture
+                    </h3>
+                    <p style={{ fontSize: '0.75rem', color: '#64748b', marginTop: '2px' }}>
+                      Active bounds enforcing cost caps, execution steps, SSRF defenses, and approval requirements
+                    </p>
+                  </div>
+
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: '14px' }}>
                     <div style={{ padding: '16px', background: '#0a0e18', border: '1px solid #172134', borderRadius: '10px' }}>
-                      <div style={{ fontWeight: 700, color: '#38bdf8', marginBottom: '4px' }}>execute_python</div>
-                      <div style={{ fontSize: '0.72rem', color: '#64748b' }}>AST-analyzed sandboxed execution with strict resource caps</div>
+                      <div style={{ fontSize: '0.68rem', color: '#64748b', textTransform: 'uppercase', fontWeight: 700 }}>Execution Bounds</div>
+                      <div style={{ fontSize: '0.9rem', fontWeight: 700, color: '#38bdf8', marginTop: '6px' }}>MAX_STEPS = 15</div>
+                      <div style={{ fontSize: '0.72rem', color: '#94a3b8', marginTop: '4px' }}>
+                        Halts recursive graph steps and prevents runaway agent execution loops.
+                      </div>
                     </div>
+
                     <div style={{ padding: '16px', background: '#0a0e18', border: '1px solid #172134', borderRadius: '10px' }}>
-                      <div style={{ fontWeight: 700, color: '#38bdf8', marginBottom: '4px' }}>web_search</div>
-                      <div style={{ fontSize: '0.72rem', color: '#64748b' }}>Deterministic search retrieval with safety filters</div>
+                      <div style={{ fontSize: '0.68rem', color: '#64748b', textTransform: 'uppercase', fontWeight: 700 }}>Rework Circuit Breaker</div>
+                      <div style={{ fontSize: '0.9rem', fontWeight: 700, color: '#38bdf8', marginTop: '6px' }}>MAX_REWORK_ATTEMPTS = 3</div>
+                      <div style={{ fontSize: '0.72rem', color: '#94a3b8', marginTop: '4px' }}>
+                        Bounds reviewer rejections; gracefully reports errors rather than recursing infinitely.
+                      </div>
                     </div>
+
                     <div style={{ padding: '16px', background: '#0a0e18', border: '1px solid #172134', borderRadius: '10px' }}>
-                      <div style={{ fontWeight: 700, color: '#fbbf24', marginBottom: '4px' }}>send_slack_message</div>
-                      <div style={{ fontSize: '0.72rem', color: '#64748b' }}>External notification tool with HIGH risk approval gate</div>
+                      <div style={{ fontSize: '0.68rem', color: '#64748b', textTransform: 'uppercase', fontWeight: 700 }}>Resource Budgets</div>
+                      <div style={{ fontSize: '0.9rem', fontWeight: 700, color: '#10b981', marginTop: '6px' }}>50,000 Tokens • $2.00 USD</div>
+                      <div style={{ fontSize: '0.72rem', color: '#94a3b8', marginTop: '4px' }}>
+                        Hard token and cost budgets tracked in real-time across all LLM inference calls.
+                      </div>
+                    </div>
+
+                    <div style={{ padding: '16px', background: '#0a0e18', border: '1px solid #172134', borderRadius: '10px' }}>
+                      <div style={{ fontSize: '0.68rem', color: '#64748b', textTransform: 'uppercase', fontWeight: 700 }}>Idempotency Protection</div>
+                      <div style={{ fontSize: '0.9rem', fontWeight: 700, color: '#a78bfa', marginTop: '6px' }}>Stateful Replay Gate</div>
+                      <div style={{ fontSize: '0.72rem', color: '#94a3b8', marginTop: '4px' }}>
+                        Caches tool executions with SHA/composite keys to prevent executing non-idempotent ops twice.
+                      </div>
+                    </div>
+
+                    <div style={{ padding: '16px', background: '#0a0e18', border: '1px solid #172134', borderRadius: '10px' }}>
+                      <div style={{ fontSize: '0.68rem', color: '#64748b', textTransform: 'uppercase', fontWeight: 700 }}>Adversarial Memory Defense</div>
+                      <div style={{ fontSize: '0.9rem', fontWeight: 700, color: '#fbbf24', marginTop: '6px' }}>Untrusted Context Framing</div>
+                      <div style={{ fontSize: '0.72rem', color: '#94a3b8', marginTop: '4px' }}>
+                        Past memories are isolated as data; instructions inside memory are blocked from overriding directives.
+                      </div>
+                    </div>
+
+                    <div style={{ padding: '16px', background: '#0a0e18', border: '1px solid #172134', borderRadius: '10px' }}>
+                      <div style={{ fontSize: '0.68rem', color: '#64748b', textTransform: 'uppercase', fontWeight: 700 }}>SSRF & Cloud Metadata Defense</div>
+                      <div style={{ fontSize: '0.9rem', fontWeight: 700, color: '#f43f5e', marginTop: '6px' }}>RFC1918 + 169.254.169.254 Blocked</div>
+                      <div style={{ fontSize: '0.72rem', color: '#94a3b8', marginTop: '4px' }}>
+                        Resolves target host DNS to strictly block internal network scans and IAM metadata extraction.
+                      </div>
                     </div>
                   </div>
                 </div>

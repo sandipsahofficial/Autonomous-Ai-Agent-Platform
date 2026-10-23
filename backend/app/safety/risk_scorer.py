@@ -71,6 +71,22 @@ def assess_tool_risk(tool_name: str, arguments: Dict[str, Any]) -> RiskAssessmen
             reason="File write modifies the workspace environment; auto-allowed with audit log.",
         )
 
+    elif tool_name in ("calculator", "text_summarizer", "json_validator", "doc_inspector"):
+        return RiskAssessment(
+            tool_name=tool_name,
+            risk_level=RiskLevel.LOW,
+            requires_human_approval=False,
+            reason=f"Tool '{tool_name}' performs safe, read-only or in-memory operations.",
+        )
+
+    elif tool_name == "http_get":
+        return RiskAssessment(
+            tool_name=tool_name,
+            risk_level=RiskLevel.HIGH,
+            requires_human_approval=True,
+            reason="External HTTP requests require human approval and SSRF verification.",
+        )
+
     elif tool_name in ("file_delete", "shell_command", "send_payment"):
         return RiskAssessment(
             tool_name=tool_name,

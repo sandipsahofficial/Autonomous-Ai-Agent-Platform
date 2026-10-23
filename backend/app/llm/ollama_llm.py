@@ -25,6 +25,7 @@ class OllamaLLMProvider(BaseLLMProvider):
     ):
         self.base_url = base_url.rstrip("/")
         self.model_name = model_name
+        self.provider_name = "ollama"
         self.timeout = timeout
         self.api_url = f"{self.base_url}/api/chat"
 

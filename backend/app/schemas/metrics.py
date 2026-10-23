@@ -1,4 +1,4 @@
-from typing import List, Optional
+from typing import List, Optional, Dict, Any
 from pydantic import BaseModel, Field
 
 
@@ -31,3 +31,20 @@ class AgentMetricItem(BaseModel):
 class AgentMetricsListResponse(BaseModel):
     total_agents: int
     agents: List[AgentMetricItem]
+
+
+class FailureReasonItem(BaseModel):
+    reason: str
+    count: int
+
+
+class EvaluationQualityMetrics(BaseModel):
+    task_completion_rate: float = Field(..., description="Task success completion percentage (0.0-100.0)")
+    reviewer_acceptance_rate: float = Field(..., description="Reviewer acceptance rate across subtasks (0.0-100.0)")
+    tool_success_rate: float = Field(..., description="Tool invocation success percentage (0.0-100.0)")
+    retry_rate: float = Field(..., description="Proportion of missions experiencing bounded retries")
+    average_duration_ms: float = Field(..., description="Average operation duration in milliseconds")
+    p95_duration_ms: float = Field(..., description="95th percentile operation duration in milliseconds")
+    llm_failures_count: int = Field(..., description="Count of recovered or logged LLM provider failures")
+    approval_wait_time_avg_s: float = Field(..., description="Average wait time for human operator approvals in seconds")
+    top_failure_reasons: List[FailureReasonItem] = Field(default_factory=list, description="Categorized failure explanations")
