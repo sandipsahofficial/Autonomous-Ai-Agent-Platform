@@ -1,7 +1,9 @@
 from typing import List
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status
 from app.tools.registry import default_tool_registry
 from app.schemas.tool import ToolSchemaResponse, ToolExecutionRequest, ToolExecutionResponse
+from app.auth.dependencies import get_current_user
+from app.models.user import User, UserRole
 
 router = APIRouter(prefix="/tools", tags=["Tools"])
 
@@ -15,10 +17,20 @@ def list_available_tools():
 
 
 @router.post("/execute", response_model=ToolExecutionResponse)
-def execute_tool(payload: ToolExecutionRequest):
+def execute_tool(
+    payload: ToolExecutionRequest,
+    current_user: User = Depends(get_current_user),
+):
     """
     Execute a tool through the mandatory safety gate.
+    Requires operator or admin role.
     """
+    if current_user.role not in (UserRole.ADMIN.value, UserRole.OPERATOR.value):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=f"Forbidden: role '{current_user.role}' cannot execute tools directly.",
+        )
+
     result, risk = default_tool_registry.execute_with_safety_gate(
         tool_name=payload.tool_name,
         arguments=payload.arguments,

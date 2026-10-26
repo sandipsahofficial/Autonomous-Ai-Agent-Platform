@@ -27,14 +27,27 @@ def test_health_endpoint(client):
     """
     Ensure the health endpoint returns 200 OK and reports expected configuration.
     """
-    response = client.get("/health")
-    assert response.status_code == 200
-    data = response.json()
-    assert data["status"] == "healthy"
-    assert "environment" in data
-    assert "llm_provider" in data
-    assert data["max_rework_attempts"] == 3
-    assert data["max_steps"] == 15
+    for path in ("/health", "/api/v1/health"):
+        response = client.get(path)
+        assert response.status_code == 200
+        data = response.json()
+        assert data["status"] == "healthy"
+        assert "environment" in data
+        assert "llm_provider" in data
+        assert data["max_rework_attempts"] == 3
+        assert data["max_steps"] == 15
+
+
+def test_readiness_endpoint(client):
+    """
+    Ensure readiness probes verify database and system readiness.
+    """
+    for path in ("/ready", "/api/v1/ready"):
+        response = client.get(path)
+        assert response.status_code == 200
+        data = response.json()
+        assert data["status"] in ("ready", "not_ready")
+        assert "database" in data
 
 
 def test_settings_singleton():

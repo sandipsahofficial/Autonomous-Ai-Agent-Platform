@@ -3,7 +3,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status, Background
 from sqlalchemy.orm import Session
 from app.database import get_db, SessionLocal
 from app.models.task import Task, Subtask, ExecutionEvent, TaskStatus, SubtaskStatus
-from app.models.user import User
+from app.models.user import User, UserRole
 from app.auth.dependencies import get_current_user, require_owner_or_admin
 from app.schemas.task import (
     TaskCreate,
@@ -181,6 +181,11 @@ def create_task(
     """
     Create a new agent mission with a user goal and trigger autonomous multi-agent execution.
     """
+    if current_user and current_user.role == UserRole.VIEWER.value:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Forbidden: users with 'viewer' role are not authorized to create missions.",
+        )
     owner_id = current_user.id if current_user else (payload.user_id or "sandip_sah")
     task = Task(
         goal=payload.goal,
@@ -216,6 +221,11 @@ def cancel_task(
     """
     Safely cancel an active or paused mission.
     """
+    if current_user and current_user.role == UserRole.VIEWER.value:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Forbidden: users with 'viewer' role are not authorized to cancel missions.",
+        )
     from app.services.recovery_service import TaskRecoveryService
     task = db.query(Task).filter(Task.id == task_id).first()
     if not task:
@@ -225,7 +235,7 @@ def cancel_task(
     ok, msg = TaskRecoveryService.cancel_task(db, task_id, current_user.username)
     if not ok:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=msg)
-    return {"success": True, "message": msg, "task_id": task_id}
+    return {"success": True, "status": "CANCELLED", "message": msg, "task_id": task_id}
 
 
 @router.post("/recovery/sweep", response_model=dict)
@@ -377,6 +387,11 @@ def delete_task(
     """
     Delete a task and its subtasks.
     """
+    if current_user and current_user.role == UserRole.VIEWER.value:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Forbidden: users with 'viewer' role are not authorized to delete missions.",
+        )
     task = db.query(Task).filter(Task.id == task_id).first()
     if not task:
         raise HTTPException(
@@ -399,6 +414,11 @@ def add_subtask(
     """
     Add a subtask to an existing task.
     """
+    if current_user and current_user.role == UserRole.VIEWER.value:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Forbidden: users with 'viewer' role are not authorized to add subtasks.",
+        )
     task = db.query(Task).filter(Task.id == task_id).first()
     if not task:
         raise HTTPException(

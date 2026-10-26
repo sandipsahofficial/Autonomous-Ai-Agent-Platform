@@ -1,5 +1,5 @@
 from typing import List, Optional, Literal, Any
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 
 class SubtaskPlanItem(BaseModel):
@@ -43,17 +43,66 @@ class ReviewerOutput(BaseModel):
     status: Literal["APPROVED", "REWORK_NEEDED"] = Field(
         ..., description="Review outcome: approved or needs rework"
     )
-    quality_score: int = Field(..., ge=0, le=100, description="Quality rating from 0 to 100")
+    quality_score: int = Field(90, description="Quality rating from 0 to 100")
     comments: str = Field(..., description="Specific feedback on correctness and completeness")
     rework_instructions: Optional[str] = Field(
         None, description="Actionable correction instructions if status is REWORK_NEEDED"
     )
 
+    @field_validator("status", mode="before")
+    @classmethod
+    def normalize_status(cls, v: Any) -> str:
+        if isinstance(v, str):
+            v_clean = v.strip().upper()
+            if "APPROV" in v_clean or "PASS" in v_clean:
+                return "APPROVED"
+            if "REWORK" in v_clean or "FAIL" in v_clean or "REJECT" in v_clean:
+                return "REWORK_NEEDED"
+        return v
+
+    @field_validator("quality_score", mode="before")
+    @classmethod
+    def normalize_quality(cls, v: Any) -> int:
+        if isinstance(v, float) and 0.0 <= v <= 1.0:
+            return int(v * 100)
+        try:
+            val = int(v)
+            return max(0, min(100, val))
+        except Exception:
+            return 90
+
 
 class FinalizerOutput(BaseModel):
     executive_summary: str = Field(..., description="Unified synthesis of mission achievement")
-    deliverables: str = Field(..., description="Final structured outputs, results, and artifacts")
+    deliverables: Any = Field(..., description="Final structured outputs, results, and artifacts")
     learnings_and_strategy: str = Field(
         ..., description="Valuable strategy insight or reusable pattern to record in persistent memory"
     )
-    confidence_score: int = Field(..., ge=0, le=100, description="Final mission quality confidence (0-100)")
+    confidence_score: int = Field(95, description="Final mission quality confidence (0-100)")
+
+    @field_validator("confidence_score", mode="before")
+    @classmethod
+    def normalize_confidence(cls, v: Any) -> int:
+        if isinstance(v, float) and 0.0 <= v <= 1.0:
+            return int(v * 100)
+        try:
+            val = int(v)
+            return max(0, min(100, val))
+        except Exception:
+            return 95
+
+    @field_validator("deliverables", mode="before")
+    @classmethod
+    def normalize_deliverables(cls, v: Any) -> str:
+        if isinstance(v, (dict, list)):
+            import json
+            return json.dumps(v, indent=2)
+        return str(v)
+
+    @field_validator("executive_summary", "learnings_and_strategy", mode="before")
+    @classmethod
+    def normalize_text(cls, v: Any) -> str:
+        if isinstance(v, (dict, list)):
+            import json
+            return json.dumps(v)
+        return str(v)

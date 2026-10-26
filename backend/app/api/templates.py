@@ -10,7 +10,8 @@ from app.schemas.template import (
     TemplateImportPayload,
 )
 from app.services.template_service import TemplateService
-from app.api.memories import get_current_user_id
+from app.models.user import User, UserRole
+from app.auth.dependencies import get_current_user, get_current_user_id
 
 router = APIRouter(prefix="/templates", tags=["Template Library"])
 
@@ -45,13 +46,18 @@ def clone_template(
     template_id: str,
     custom_name: Optional[str] = Query(None),
     workspace_id: str = Query("default_workspace"),
-    user_id: str = Depends(get_current_user_id),
+    current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
+    if current_user.role not in (UserRole.ADMIN.value, UserRole.OPERATOR.value):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=f"Forbidden: role '{current_user.role}' cannot clone templates.",
+        )
     success, msg, cloned_id, ctype = TemplateService.clone_template(
         db=db,
         template_id=template_id,
-        user_id=user_id,
+        user_id=current_user.id,
         workspace_id=workspace_id,
         custom_name=custom_name,
     )
@@ -89,8 +95,14 @@ def export_template(
 @router.post("/import", response_model=TemplateResponse, status_code=status.HTTP_201_CREATED)
 def import_template(
     payload: TemplateImportPayload,
+    current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
+    if current_user.role not in (UserRole.ADMIN.value, UserRole.OPERATOR.value):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=f"Forbidden: role '{current_user.role}' cannot import templates.",
+        )
     template, err = TemplateService.import_template_json(db, payload.template_json)
     if err or not template:
         raise HTTPException(

@@ -13,6 +13,88 @@ import {
 
 const API_BASE = '/api/v1';
 
+export function getAuthToken(): string | null {
+  if (typeof window !== 'undefined' && window.localStorage) {
+    return localStorage.getItem('mesh_access_token');
+  }
+  return null;
+}
+
+export function setAuthToken(token: string): void {
+  if (typeof window !== 'undefined' && window.localStorage) {
+    localStorage.setItem('mesh_access_token', token);
+  }
+}
+
+export function clearAuthToken(): void {
+  if (typeof window !== 'undefined' && window.localStorage) {
+    localStorage.removeItem('mesh_access_token');
+  }
+}
+
+export function authHeaders(headers: Record<string, string> = {}): Record<string, string> {
+  const token = getAuthToken();
+  const res: Record<string, string> = { ...headers };
+  if (token && !res['Authorization']) {
+    res['Authorization'] = `Bearer ${token}`;
+  }
+  return res;
+}
+
+export async function authFetch(input: RequestInfo | URL, init: RequestInit = {}): Promise<Response> {
+  const reqHeaders = authHeaders((init.headers as Record<string, string>) || {});
+  const res = await fetch(input, {
+    ...init,
+    headers: reqHeaders,
+  });
+
+  if (res.status === 401) {
+    clearAuthToken();
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.detail || 'Authentication required or session expired. Please log in.');
+  }
+
+  if (res.status === 403) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.detail || 'Forbidden: You do not have permission for this operation.');
+  }
+
+  if (res.status === 429) {
+    throw new Error('Rate limit exceeded: Please wait before retrying.');
+  }
+
+  return res;
+}
+
+export async function loginUser(username: string, password: string): Promise<any> {
+  const res = await fetch(`${API_BASE}/auth/login`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ username, password }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.detail || `Login failed: ${res.statusText}`);
+  }
+  const data = await res.json();
+  if (data.access_token) {
+    setAuthToken(data.access_token);
+  }
+  return data;
+}
+
+export async function logoutUser(): Promise<void> {
+  clearAuthToken();
+}
+
+export async function getCurrentUser(): Promise<any> {
+  const res = await fetch(`${API_BASE}/auth/me`, {
+    headers: authHeaders(),
+  });
+  if (!res.ok) throw new Error(`Failed to fetch current user profile: ${res.statusText}`);
+  return res.json();
+}
+
 export async function createTask(goal: string): Promise<Task> {
   const res = await fetch(`${API_BASE}/tasks`, {
     method: 'POST',
@@ -68,7 +150,7 @@ export async function listAuditLogs(riskLevel?: string): Promise<{ total: number
   const url = riskLevel
     ? `${API_BASE}/audit-logs?risk_level=${riskLevel}`
     : `${API_BASE}/audit-logs`;
-  const res = await fetch(url);
+  const res = await authFetch(url);
   if (!res.ok) throw new Error(`Failed to fetch audit logs: ${res.statusText}`);
   return res.json();
 }
@@ -379,7 +461,7 @@ export async function queryDocumentCitations(query: string, topK: number = 3): P
 
 export async function listTemplates(category?: string): Promise<{ total: number; templates: any[] }> {
   const url = category ? `${API_BASE}/templates?category=${encodeURIComponent(category)}` : `${API_BASE}/templates`;
-  const res = await fetch(url);
+  const res = await authFetch(url);
   if (!res.ok) throw new Error(`Failed to list templates: ${res.statusText}`);
   return res.json();
 }

@@ -16,12 +16,13 @@ def get_checkpointer() -> BaseCheckpointSaver:
     Keeps LangGraph internal checkpoint tables separate from application tables (tasks, audit_logs).
     Uses MemorySaver for zero-dependency local runs and tests.
     """
-    if "postgres" in settings.DATABASE_URL and settings.APP_ENV != "test":
+    from app.database import database_url
+    if "postgres" in database_url and settings.APP_ENV != "test":
         try:
             from langgraph_checkpoint_postgres import PostgresSaver
             # Use connection string to initialize official postgres checkpointer
             # PostgresSaver manages its own internal checkpoints and checkpoint_blobs tables
-            return PostgresSaver.from_conn_string(settings.DATABASE_URL)
+            return PostgresSaver.from_conn_string(database_url)
         except Exception:
             # Fallback to in-memory checkpointer if PostgreSQL is starting or not reachable
             return _memory_saver

@@ -1,4 +1,5 @@
 from typing import Optional, List
+from datetime import datetime, timezone
 from fastapi import Depends, HTTPException, Header, status
 from sqlalchemy.orm import Session
 from app.database import get_db
@@ -53,6 +54,15 @@ def get_current_user(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Invalid or deactivated API key.",
             )
+        if api_key_rec.expires_at:
+            exp = api_key_rec.expires_at
+            if exp.tzinfo is None:
+                exp = exp.replace(tzinfo=timezone.utc)
+            if datetime.now(timezone.utc) > exp:
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="API key has expired.",
+                )
         user = db.query(User).filter(User.id == api_key_rec.user_id).first()
         if not user or not user.is_active:
             raise HTTPException(
@@ -98,6 +108,13 @@ def get_current_user(
             is_active=True,
         )
     return dev_user
+
+
+def get_current_user_id(current_user: User = Depends(get_current_user)) -> str:
+    """
+    Convenience dependency returning the authenticated user's ID string.
+    """
+    return current_user.id
 
 
 def require_role(allowed_roles: List[str]):

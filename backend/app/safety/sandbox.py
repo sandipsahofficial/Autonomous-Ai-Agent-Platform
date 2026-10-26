@@ -37,7 +37,7 @@ class SandboxExecutor:
         self.pids_limit = pids_limit
 
     def _is_docker_available(self) -> bool:
-        """Check if Docker daemon is responsive."""
+        """Check if Docker daemon is responsive and the sandbox image is locally present."""
         try:
             res = subprocess.run(
                 ["docker", "info"],
@@ -45,7 +45,15 @@ class SandboxExecutor:
                 stderr=subprocess.DEVNULL,
                 timeout=2,
             )
-            return res.returncode == 0
+            if res.returncode != 0:
+                return False
+            img_check = subprocess.run(
+                ["docker", "image", "inspect", self.docker_image],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                timeout=2,
+            )
+            return img_check.returncode == 0
         except Exception:
             return False
 

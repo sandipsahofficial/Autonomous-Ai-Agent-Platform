@@ -6,6 +6,8 @@ from sqlalchemy import func
 from app.database import get_db
 from app.models.task import Task, Subtask, ExecutionEvent, TaskStatus, SubtaskStatus
 from app.models.audit import AuditLog
+from app.models.user import User, UserRole
+from app.auth.dependencies import get_current_user
 from app.schemas.metrics import (
     FleetMetricsResponse,
     AgentMetricsListResponse,
@@ -18,12 +20,18 @@ router = APIRouter(prefix="/metrics", tags=["Metrics"])
 
 
 @router.get("/fleet", response_model=FleetMetricsResponse)
-def get_fleet_metrics(db: Session = Depends(get_db)):
+def get_fleet_metrics(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
     """
     Calculate dynamic dashboard metrics strictly from database records.
-    Never fabricates metrics; correctly handles empty databases and missing cost data.
+    Never fabricates metrics; enforces tenant isolation for non-admin callers.
     """
-    tasks = db.query(Task).all()
+    query = db.query(Task)
+    if current_user.role != UserRole.ADMIN.value:
+        query = query.filter(Task.user_id == current_user.id)
+    tasks = query.all()
     total_tasks = len(tasks)
 
     active_statuses = {
@@ -83,9 +91,13 @@ def get_fleet_metrics(db: Session = Depends(get_db)):
 
 
 @router.get("/agents", response_model=AgentMetricsListResponse)
-def get_agent_metrics(db: Session = Depends(get_db)):
+def get_agent_metrics(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
     """
     Substantiated performance statistics across production agents derived from subtasks and audit logs.
+    Enforces tenant isolation for non-admin callers.
     """
     agent_defs = [
         {
@@ -115,25 +127,34 @@ def get_agent_metrics(db: Session = Depends(get_db)):
     ]
 
     items: List[AgentMetricItem] = []
+    user_task_ids = None
+    if current_user.role != UserRole.ADMIN.value:
+        user_task_ids = [t.id for t in db.query(Task.id).filter(Task.user_id == current_user.id).all()]
 
     for agent in agent_defs:
         key = agent["assigned_agent"]
 
         # Calculate runs and completion from subtasks for worker agents, or audit logs for planner/reviewer
         if key in ("researcher", "coder"):
-            subtasks = db.query(Subtask).filter(Subtask.assigned_agent == key).all()
+            sub_q = db.query(Subtask).filter(Subtask.assigned_agent == key)
+            if user_task_ids is not None:
+                sub_q = sub_q.filter(Subtask.task_id.in_(user_task_ids))
+            subtasks = sub_q.all()
             runs = len(subtasks)
             completed = sum(1 for s in subtasks if s.status == SubtaskStatus.COMPLETED)
             active = sum(1 for s in subtasks if s.status in (SubtaskStatus.IN_PROGRESS, SubtaskStatus.WAITING_APPROVAL))
             success_rate = round((completed / runs * 100.0), 1) if runs > 0 else 0.0
-            last_record = db.query(Subtask).filter(Subtask.assigned_agent == key).order_by(Subtask.updated_at.desc()).first()
+            last_record = sub_q.order_by(Subtask.updated_at.desc()).first()
             last_active = last_record.updated_at.strftime("%Y-%m-%d %H:%M UTC") if last_record else "No runs"
         else:
-            logs = db.query(AuditLog).filter(AuditLog.agent_name == key).all()
+            log_q = db.query(AuditLog).filter(AuditLog.agent_name == key)
+            if user_task_ids is not None:
+                log_q = log_q.filter(AuditLog.task_id.in_(user_task_ids))
+            logs = log_q.all()
             runs = len(logs)
             success_rate = 100.0 if runs > 0 else 0.0
             active = 0
-            last_record = db.query(AuditLog).filter(AuditLog.agent_name == key).order_by(AuditLog.created_at.desc()).first()
+            last_record = log_q.order_by(AuditLog.created_at.desc()).first()
             last_active = last_record.created_at.strftime("%Y-%m-%d %H:%M UTC") if last_record else "No runs"
 
         status_type = "running" if active > 0 else "idle"
@@ -163,15 +184,28 @@ def get_agent_metrics(db: Session = Depends(get_db)):
 
 
 @router.get("/quality", response_model=EvaluationQualityMetrics)
-def get_quality_metrics(db: Session = Depends(get_db)):
+def get_quality_metrics(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
     """
     Substantiated evaluation and quality metrics across tasks, tools, reviewers, and recovery runs.
     Calculates completion rate, reviewer acceptance rate, tool success rate, retry rate,
     duration percentiles (p50, p95), LLM recovery counts, and categorized failure reasons.
+    Enforces tenant isolation for non-admin callers.
     """
-    tasks = db.query(Task).all()
-    subtasks = db.query(Subtask).all()
-    events = db.query(ExecutionEvent).all()
+    tasks_q = db.query(Task)
+    if current_user.role != UserRole.ADMIN.value:
+        tasks_q = tasks_q.filter(Task.user_id == current_user.id)
+    tasks = tasks_q.all()
+
+    task_ids = [t.id for t in tasks]
+    if task_ids:
+        subtasks = db.query(Subtask).filter(Subtask.task_id.in_(task_ids)).all()
+        events = db.query(ExecutionEvent).filter(ExecutionEvent.task_id.in_(task_ids)).all()
+    else:
+        subtasks = []
+        events = []
 
     # 1. Task Completion Rate
     completed_tasks = sum(1 for t in tasks if t.status == TaskStatus.COMPLETED)

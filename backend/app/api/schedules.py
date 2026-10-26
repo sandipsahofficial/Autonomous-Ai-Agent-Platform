@@ -37,6 +37,19 @@ def create_schedule(
             status_code=status.HTTP_403_FORBIDDEN,
             detail=f"Forbidden: role '{current_user.role}' cannot create schedules.",
         )
+    if payload.workflow_id:
+        from app.models.workflow import Workflow
+        wf = db.query(Workflow).filter(Workflow.id == payload.workflow_id).first()
+        if not wf:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Referenced workflow '{payload.workflow_id}' not found.",
+            )
+        if wf.user_id != current_user.id and current_user.role != UserRole.ADMIN.value:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Forbidden: You cannot schedule another tenant's workflow.",
+            )
     schedule = SchedulerService.create_schedule(
         db=db,
         user_id=current_user.id,
@@ -73,6 +86,19 @@ def update_schedule(
             status_code=status.HTTP_403_FORBIDDEN,
             detail=f"Forbidden: role '{current_user.role}' cannot update schedules.",
         )
+    if payload.workflow_id:
+        from app.models.workflow import Workflow
+        wf = db.query(Workflow).filter(Workflow.id == payload.workflow_id).first()
+        if not wf:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Referenced workflow '{payload.workflow_id}' not found.",
+            )
+        if wf.user_id != current_user.id and current_user.role != UserRole.ADMIN.value:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Forbidden: You cannot schedule another tenant's workflow.",
+            )
     schedule = SchedulerService.update_schedule(
         db=db,
         schedule_id=schedule_id,

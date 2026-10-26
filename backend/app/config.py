@@ -78,9 +78,13 @@ try:
                     raise ValueError("CRITICAL: APP_DEBUG must be False in production.")
                 if self.JWT_SECRET_KEY == "mesh_insecure_development_secret_change_in_production":
                     raise ValueError("CRITICAL: JWT_SECRET_KEY must be configured with a secure secret in production.")
+                if not self.REQUIRE_AUTH:
+                    raise ValueError("CRITICAL: REQUIRE_AUTH must be True in production.")
                 origins = self.get_cors_origins()
                 if "*" in origins:
                     raise ValueError("CRITICAL: Wildcard '*' CORS origin is strictly forbidden in production.")
+                if "sqlite" in self.DATABASE_URL.lower():
+                    raise ValueError("CRITICAL: SQLite database is strictly forbidden in production. PostgreSQL is required.")
 
 except ImportError:
     # Graceful fallback for lightweight local host environments without pydantic-settings
@@ -133,9 +137,13 @@ except ImportError:
                     raise ValueError("CRITICAL: APP_DEBUG must be False in production.")
                 if self.JWT_SECRET_KEY == "mesh_insecure_development_secret_change_in_production":
                     raise ValueError("CRITICAL: JWT_SECRET_KEY must be configured with a secure secret in production.")
+                if not self.REQUIRE_AUTH:
+                    raise ValueError("CRITICAL: REQUIRE_AUTH must be True in production.")
                 origins = self.get_cors_origins()
                 if "*" in origins:
                     raise ValueError("CRITICAL: Wildcard '*' CORS origin is strictly forbidden in production.")
+                if "sqlite" in self.DATABASE_URL.lower():
+                    raise ValueError("CRITICAL: SQLite database is strictly forbidden in production. PostgreSQL is required.")
 
 
 @lru_cache()

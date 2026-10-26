@@ -56,3 +56,7 @@ backups/
 node_modules/
 dist/
 .DS_Store
+
+# Sandbox Workspace runtime files
+workspace/*
+!workspace/.gitkeep

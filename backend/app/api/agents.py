@@ -195,8 +195,16 @@ def get_agent_metrics(
             detail=f"Agent '{agent_id}' not found.",
         )
 
-    # Subtasks assigned to this agent archetype
-    subtasks = db.query(Subtask).filter(Subtask.assigned_agent == agent.slug).all()
+    # Subtasks assigned to this agent archetype (enforcing tenant isolation on parent task)
+    if current_user.role != UserRole.ADMIN.value:
+        subtasks = (
+            db.query(Subtask)
+            .join(Task, Subtask.task_id == Task.id)
+            .filter(Subtask.assigned_agent == agent.slug, Task.user_id == current_user.id)
+            .all()
+        )
+    else:
+        subtasks = db.query(Subtask).filter(Subtask.assigned_agent == agent.slug).all()
     total_runs = len(subtasks)
     successful_runs = sum(1 for s in subtasks if s.status == "COMPLETED")
     failed_runs = sum(1 for s in subtasks if s.status == "FAILED")
